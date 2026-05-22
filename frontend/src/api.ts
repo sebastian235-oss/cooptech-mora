@@ -29,3 +29,34 @@ export function predictSocio(
 }
 
 export type { PredictResponse };
+
+export interface UploadExcelResponse {
+  ok: boolean;
+  archivo: string;
+  modo: string;
+  total_procesados: number;
+  mensaje: string;
+  columnas_detectadas?: string[];
+  columnas_mapeadas?: Record<string, string>;
+}
+
+export async function uploadExcel(file: File): Promise<UploadExcelResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_URL}/socios/upload-excel`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    const detail = err.detail;
+    const msg =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg).join(", ")
+          : res.statusText;
+    throw new Error(msg || `Error ${res.status}`);
+  }
+  return res.json();
+}

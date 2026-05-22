@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import health, predict, socios
+from app.routers import health, predict, socios, upload
 
 app = FastAPI(
     title=settings.app_name,
@@ -25,6 +25,7 @@ prefix = settings.api_prefix
 app.include_router(health.router, prefix=prefix)
 app.include_router(predict.router, prefix=prefix)
 app.include_router(socios.router, prefix=prefix)
+app.include_router(upload.router, prefix=prefix)
 
 
 @app.get("/")

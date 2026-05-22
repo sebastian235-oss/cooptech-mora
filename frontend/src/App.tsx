@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchDashboard } from "./api";
+import { fetchDashboard, uploadExcel } from "./api";
 import type { DashboardResponse, NivelRiesgo, Socio } from "./types";
 import "./App.css";
 
@@ -38,20 +38,46 @@ function getPrediccion(socio: Socio) {
   return null;
 }
 
+function sourceLabel(source: string) {
+  if (source === "supabase") return "Supabase conectado";
+  if (source === "upload") return "Datos cargados";
+  return "Modo demo";
+}
+
 function App() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchDashboard()
+  const refresh = useCallback(() => {
+    return fetchDashboard()
       .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => setError(e.message));
   }, []);
 
+  useEffect(() => {
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setUploadMsg(null);
+    setError(null);
+    try {
+      const res = await uploadExcel(file);
+      setUploadMsg(res.mensaje);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al subir archivo");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (loading) return <div className="app loading">Cargando dashboard…</div>;
-  if (error) return <div className="app error">Error: {error}</div>;
+  if (error && !data) return <div className="app error">Error: {error}</div>;
   if (!data) return null;
 
   const { stats, socios, source } = data;
@@ -77,10 +103,29 @@ function App() {
           <h1>CoopTech Tulcán — Riesgo de Mora</h1>
           <p>Perfilamiento transaccional preventivo · DevIAthon CoopTech</p>
         </div>
-        <span className={`badge ${source}`}>
-          {source === "supabase" ? "Supabase conectado" : "Modo demo"}
-        </span>
+        <div className="header-actions">
+          <div className="upload-zone">
+            <label className={`upload-btn${uploading ? " disabled" : ""}`}>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                  e.target.value = "";
+                }}
+              />
+              {uploading ? "Procesando…" : "Subir Excel"}
+            </label>
+            <span className="upload-hint">.xlsx, .xls o .csv</span>
+          </div>
+          <span className={`badge ${source}`}>{sourceLabel(source)}</span>
+        </div>
       </header>
+
+      {uploadMsg && <p className="upload-success">{uploadMsg}</p>}
+      {error && <p className="upload-error">{error}</p>}
 
       <section className="cards">
         <div className="card">
@@ -134,7 +179,11 @@ function App() {
           <h2>Probabilidad de mora por socio (%)</h2>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={barData} barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="#e2e8f0"
+                vertical={false}
+              />
               <XAxis
                 dataKey="nombre"
                 tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}

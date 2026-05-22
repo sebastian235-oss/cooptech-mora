@@ -396,3 +396,83 @@ tbody tr:not(:last-child) td {
   max-width: 480px;
   margin: 2rem auto;
 }
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.1rem;
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.upload-btn:hover:not(.disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.4);
+}
+
+.upload-btn.disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.upload-btn input {
+  display: none;
+}
+
+.upload-hint {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.upload-success {
+  margin: -0.5rem 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--bajo-bg);
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  color: #15803d;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.upload-error {
+  margin: -0.5rem 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--alto-bg);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  color: var(--alto);
+  font-size: 0.875rem;
+}
+
+.badge.upload {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0369a1;
+}
+
+.badge.upload::before {
+  background: #0ea5e9;
+  opacity: 1;
+}

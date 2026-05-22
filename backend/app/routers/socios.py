@@ -11,6 +11,18 @@ router = APIRouter(prefix="/socios", tags=["socios"])
 
 # Datos demo en memoria si Supabase no está configurado
 _demo_socios: list[dict] = []
+_uploaded_socios: list[dict] = []
+
+
+def set_uploaded_socios(socios: list[dict]) -> None:
+    global _uploaded_socios
+    _uploaded_socios = socios
+
+
+def _active_socios() -> list[dict]:
+    if _uploaded_socios:
+        return _uploaded_socios
+    return _demo_socios
 
 
 def _seed_demo():
@@ -124,22 +136,24 @@ async def create_socio(body: SocioCreate):
 
 @router.get("/dashboard")
 async def dashboard():
-    if supabase_client.is_configured():
+    if supabase_client.is_configured() and not _uploaded_socios:
         stats = await supabase_client.dashboard_stats()
         socios = await supabase_client.list_socios(50)
         return {"source": "supabase", "stats": stats, "socios": socios}
     _seed_demo()
+    socios_list = _active_socios()
+    source = "upload" if _uploaded_socios else "demo"
     by_level = {"bajo": 0, "medio": 0, "alto": 0}
     probs = []
-    for s in _demo_socios:
+    for s in socios_list:
         p = s.get("prediccion", {})
         lvl = p.get("nivel_riesgo", "bajo")
         by_level[lvl] = by_level.get(lvl, 0) + 1
         probs.append(float(p.get("probabilidad_mora", 0)))
     stats = {
-        "total_socios": len(_demo_socios),
-        "total_predicciones": len(_demo_socios),
+        "total_socios": len(socios_list),
+        "total_predicciones": len(socios_list),
         "por_nivel": by_level,
         "probabilidad_promedio": round(sum(probs) / len(probs), 4) if probs else 0,
     }
-    return {"source": "demo", "stats": stats, "socios": _demo_socios}
+    return {"source": source, "stats": stats, "socios": socios_list}
