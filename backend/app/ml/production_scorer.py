@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from app.config import settings
+from app.ml.signals_builder import build_risk_signals, enrich_features_from_xt
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,7 @@ def _nivel_from_label(label: str, prob: float, umbral_f1: float, umbral_alto: fl
         return "alto"
     if low == "alto" or prob >= umbral_f1:
         return "alto" if prob >= umbral_alto else "medio"
-    if "medio" in low or prob >= 0.08:
-        return "medio"
-    if prob >= 0.03:
+    if "medio" in low and prob >= 0.2:
         return "medio"
     return "bajo"
 
@@ -191,25 +190,6 @@ def _extract_signal_features(raw: pd.DataFrame) -> dict[str, dict[str, float]]:
     return result
 
 
-def _apply_cohort_risk_tiers(socios: list[dict[str, Any]]) -> None:
-    """Si el modelo devuelve probabilidades muy bajas, usa ranking del lote para niveles visibles."""
-    if len(socios) < 8:
-        return
-    probs = np.array([s["prediccion"]["probabilidad_mora"] for s in socios], dtype=float)
-    if probs.max() >= 0.12:
-        return
-    p85, p95 = np.percentile(probs, [85, 95])
-    if p95 <= 0:
-        return
-    for s in socios:
-        p = s["prediccion"]["probabilidad_mora"]
-        if p <= 0:
-            continue
-        if p >= p95:
-            s["prediccion"]["nivel_riesgo"] = "alto"
-        elif p >= p85:
-            s["prediccion"]["nivel_riesgo"] = "medio"
-
 
 def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     prod = get_production_predictor()
@@ -261,7 +241,10 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
         nombre = nombres[i]
         if not nombre or nombre == "nan":
             nombre = f"Socio {cid}"
-        feats = feat_by_id.get(cid, {})
+        feats = enrich_features_from_xt(
+            cid, feat_by_id.get(cid, {}), prod._xt_agg
+        )
+        senales = build_risk_signals(feats)
         socios.append(
             {
                 "id": str(uuid4()),
@@ -275,9 +258,9 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
                     "accion": acciones[i],
                     "modelo": PRODUCTION_MODEL_FILE,
                     "features_usadas": feats,
+                    "senales": senales,
                 },
             }
         )
 
-    _apply_cohort_risk_tiers(socios)
     return socios

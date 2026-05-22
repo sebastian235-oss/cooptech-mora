@@ -1,4 +1,4 @@
-/** Genera etiquetas de señales de riesgo a partir de features del socio. */
+/** Fallback cliente: señales si el backend no envió `senales`. */
 
 const PCT = (v: number) => `${Math.round(Math.abs(v) * 100)}%`;
 
@@ -13,10 +13,7 @@ function pick(
   return undefined;
 }
 
-export function detectRiskSignals(
-  feats: Record<string, number>,
-  probabilidad: number
-): string[] {
+export function detectRiskSignals(feats: Record<string, number>): string[] {
   const signals: string[] = [];
 
   const variacionSaldo = pick(feats, [
@@ -51,7 +48,6 @@ export function detectRiskSignals(
     "dias_desde_ultimo_pago_prom",
     "dias_atraso_promedio",
     "dias_atraso",
-    "max_dias_mora_actual",
     "hist_cuotas_atrasadas_max",
   ]);
   if (diasAtraso != null && diasAtraso > 0) {
@@ -85,18 +81,5 @@ export function detectRiskSignals(
     signals.push("Capacidad pago negativa");
   }
 
-  const cuotasAtraso = pick(feats, ["hist_cuotas_atrasadas_max"]);
-  if (cuotasAtraso != null && cuotasAtraso > 0 && !signals.some((s) => s.includes("Retraso"))) {
-    signals.push("Cuotas atrasadas");
-  }
-
-  if (probabilidad >= 0.5) {
-    signals.push(`Riesgo muy alto ${(probabilidad * 100).toFixed(1)}%`);
-  } else if (probabilidad >= 0.2) {
-    signals.push(`Riesgo elevado ${(probabilidad * 100).toFixed(1)}%`);
-  } else if (probabilidad >= 0.05) {
-    signals.push(`Alerta preventiva ${(probabilidad * 100).toFixed(1)}%`);
-  }
-
-  return [...new Set(signals)].slice(0, 6);
+  return [...new Set(signals)].slice(0, 5);
 }

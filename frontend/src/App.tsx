@@ -18,6 +18,7 @@ import {
   uploadExcel,
   type SocioManualPayload,
 } from "./api";
+import { formatProbPercent, probBarWidth } from "./format";
 import { detectRiskSignals } from "./signals";
 import type { DashboardResponse, NivelRiesgo, Socio } from "./types";
 import "./App.css";
@@ -404,7 +405,7 @@ function App() {
         <div className="card">
           <h3>Probabilidad promedio</h3>
           <div className="value">
-            {(stats.probabilidad_promedio * 100).toFixed(1)}%
+            {formatProbPercent(stats.probabilidad_promedio)}
           </div>
         </div>
         <div className="card">
@@ -522,11 +523,9 @@ function App() {
                     p?.features_usadas ||
                     (p as { features?: Record<string, number> })?.features ||
                     {};
-                  const signalTags = detectRiskSignals(feats, prob);
-                  const hasRisk =
-                    signalTags.length > 0 ||
-                    prob >= 0.03 ||
-                    nivel !== "bajo";
+                  const signalTags =
+                    (p?.senales?.length ? p.senales : null) ??
+                    detectRiskSignals(feats);
 
                   return (
                     <tr key={s.id}>
@@ -538,12 +537,12 @@ function App() {
                       </td>
                       <td>
                         <span className="prob-value">
-                          {(prob * 100).toFixed(1)}%
+                          {formatProbPercent(prob)}
                         </span>
                         <div className="progress-bar">
                           <span
                             style={{
-                              width: `${Math.min(prob * 100, 100)}%`,
+                              width: `${probBarWidth(prob)}%`,
                               background: RISK_COLORS[nivel],
                             }}
                           />
@@ -563,10 +562,6 @@ function App() {
                               ))}
                             </div>
                           </div>
-                        ) : hasRisk ? (
-                          <span className="signal-tag signal-tag--model">
-                            Riesgo modelo {(prob * 100).toFixed(2)}%
-                          </span>
                         ) : (
                           <span className="signals-stable">Sin alertas</span>
                         )}

@@ -7,6 +7,7 @@ export interface Prediccion {
   accion?: string;
   nivel_label?: string;
   modelo?: string;
+  senales?: string[];
 }
 
 export interface Socio {
