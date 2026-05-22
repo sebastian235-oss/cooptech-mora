@@ -11,18 +11,17 @@ import pandas as pd
 from app.config import settings
 from app.ml import production_scorer
 from app.ml.predictor import predict_dataframe
+from app.services.column_mapping import apply_tabla_maestra_aliases
 
-ID_ALIASES = ["cliente_id", "nro_cliente", "cedula", "id_cliente", "socio_id", "id_socio"]
-LEAKAGE_COLS = {
-    "mora_actual",
-    "max_dias_mora_actual",
-    "dias_mora_futuro",
-    "saldo_vencido_futuro",
-    "target_mora_futura",
-    "target_mora",
-    "dias_mora",
-    "saldo_vencido",
-}
+ID_ALIASES = [
+    "cliente_id",
+    "nro_cliente",
+    "cedula",
+    "id_cliente",
+    "socio_id",
+    "id_socio",
+    "codigo_cliente",
+]
 
 
 def _norm_col(name: str) -> str:
@@ -41,22 +40,11 @@ def _read_file(content: bytes, filename: str) -> pd.DataFrame:
     raise ValueError("Formato no soportado. Usa .xlsx, .xls o .csv")
 
 
-def _normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [_norm_col(c) for c in df.columns]
-    df = df.loc[:, ~df.columns.duplicated()]
-    drop = [c for c in df.columns if c in LEAKAGE_COLS]
-    if drop:
-        df = df.drop(columns=drop, errors="ignore")
-    return df
-
-
 def _has_cliente_id(df: pd.DataFrame) -> bool:
     return any(_norm_col(a) in df.columns for a in ID_ALIASES)
 
 
 def _apply_row_cap(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """0 = sin límite. Valor positivo = tope de seguridad."""
     cap = settings.max_upload_rows
     if cap <= 0 or len(df) <= cap:
         return df, 0
@@ -70,7 +58,7 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
             "Copia tu carpeta modelo_mora_produccion/ completa al proyecto."
         )
 
-    df = _normalize_dataframe(_read_file(content, filename))
+    df, alias_msgs = apply_tabla_maestra_aliases(_read_file(content, filename))
     if df.empty:
         raise ValueError("El archivo está vacío.")
     if not _has_cliente_id(df):
@@ -81,10 +69,18 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
 
     socios = predict_dataframe(df)
     probs = [s["prediccion"]["probabilidad_mora"] for s in socios]
+    niveles = [s["prediccion"]["nivel_riesgo"] for s in socios]
 
     msg_extra = ""
     if truncated:
         msg_extra = f" Se procesaron {len(socios)} de {total_filas_archivo} filas (límite {settings.max_upload_rows})."
+    if alias_msgs:
+        msg_extra += f" Columnas mapeadas: {', '.join(alias_msgs[:5])}."
+    if niveles.count("bajo") == len(niveles) and len(niveles) > 0:
+        msg_extra += (
+            " Si todo sale 'bajo', verifica que el Excel tenga DIAS_MORA/SALDO_VENCIDO "
+            "o usa el dataset completo de prevención."
+        )
 
     return {
         "mode": "modelo_mora_produccion",
@@ -92,6 +88,7 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
         "total_archivo": total_filas_archivo,
         "socios": socios,
         "columnas_detectadas": list(df.columns),
+        "columnas_mapeadas": alias_msgs,
         "probabilidad_promedio": round(sum(probs) / len(probs), 4) if probs else 0,
         "modelo": "modelo_mora_futura.pkl",
         "truncado": truncated,

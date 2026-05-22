@@ -494,15 +494,21 @@ function App() {
                 const prob = p?.probabilidad_mora ?? 0;
                 const nivel = p?.nivel_riesgo ?? "bajo";
                 const feats = s.features || p?.features_usadas || {};
+                const dias =
+                  feats.dias_desde_ultimo_pago_max ?? feats.dias_atraso_promedio;
                 const signals = [
-                  (feats.dias_atraso_promedio ?? feats.dias_desde_ultimo_pago_max) >
-                    5 && "Atrasos",
-                  feats.variacion_saldo_30d < -0.2 && "Saldo ↓",
-                  feats.ratio_pago_cuota < 0.7 && "Pagos bajos",
-                  feats.ratio_egresos_ingresos > 0.85 && "Egresos altos",
-                  feats.num_movimientos_30d < 4 && "Poca actividad",
+                  dias != null &&
+                    dias > 5 &&
+                    (dias <= 15
+                      ? "Retrasos menores"
+                      : `Atraso ${Math.round(dias)} días`),
+                  (feats.saldo_vencido_actual_total ?? 0) > 0 && "Saldo vencido",
+                  (feats.ratio_egresos_ingresos ?? 0) > 0.85 && "Egresos altos",
+                  feats.ratio_pago_cuota != null &&
+                    feats.ratio_pago_cuota < 0.75 &&
+                    "Pagos bajos",
                   p?.accion && String(p.accion),
-                ].filter(Boolean);
+                ].filter(Boolean) as string[];
 
                 return (
                   <tr key={s.id}>
@@ -515,7 +521,7 @@ function App() {
                     <td>{s.agencia || "—"}</td>
                     <td>
                       <span className="prob-value">
-                        {(prob * 100).toFixed(1)}%
+                        {prob <= 0 ? "0%" : prob * 100 < 0.1 ? `${(prob * 100).toFixed(2)}%` : `${(prob * 100).toFixed(1)}%`}
                       </span>
                       <div className="progress-bar">
                         <span

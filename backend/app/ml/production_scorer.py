@@ -11,6 +11,12 @@ from uuid import uuid4
 import pandas as pd
 
 from app.config import settings
+from app.services.column_mapping import (
+    extract_features_row,
+    heuristic_probability,
+    nivel_from_features,
+    norm_cliente_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +28,6 @@ _prod_instance = None
 _prod_error: str | None = None
 
 PRODUCTION_MODEL_FILE = "modelo_mora_futura.pkl"
-
-
-def _nivel_from_prob(prob: float, umbral_f1: float, umbral_alto: float) -> str:
-    if prob >= umbral_alto:
-        return "alto"
-    if prob >= umbral_f1:
-        return "medio"
-    if prob >= 0.2:
-        return "medio"
-    return "bajo"
 
 
 def get_production_predictor():
@@ -80,7 +76,7 @@ def _ensure_cliente_id(df: pd.DataFrame) -> pd.DataFrame:
                 break
     if "cliente_id" not in out.columns:
         raise ValueError("Falta columna: cedula, cliente_id o nro_cliente.")
-    out["cliente_id"] = out["cliente_id"].astype(str).str.strip()
+    out["cliente_id"] = out["cliente_id"].map(norm_cliente_id)
     return out
 
 
@@ -91,11 +87,14 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
 
     raw = _ensure_cliente_id(df)
     raw = raw.drop_duplicates(subset=["cliente_id"], keep="last").reset_index(drop=True)
+    raw_indexed = raw.set_index("cliente_id", drop=False)
 
     scored = prod.score(raw)
     n = len(scored)
     if n == 0:
         return []
+
+    scored["cliente_id"] = scored["cliente_id"].map(norm_cliente_id)
 
     name_col = next(
         (c for c in ("nombre", "nombre_socio", "nombre_cliente", "socio") if c in scored.columns),
@@ -125,9 +124,14 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
         )
 
     cids = scored["cliente_id"].astype(str).values
-    probs = scored["prob_mora_futura"].astype(float).values
+    probs_model = scored["prob_mora_futura"].astype(float).values
     niveles_lbl = scored["nivel_riesgo"].astype(str).values
     acciones = scored["accion"].astype(str).values
+    coverages = (
+        scored["feature_coverage"].astype(float).values
+        if "feature_coverage" in scored.columns
+        else [0.0] * n
+    )
     nombres = (
         scored[name_col].astype(str).values
         if name_col and name_col in scored.columns
@@ -142,21 +146,45 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     umbral_f1, umbral_alto = prod.umbral_f1, prod.umbral_alto
     socios: list[dict[str, Any]] = []
     for i in range(n):
-        prob = float(probs[i])
+        cid = norm_cliente_id(cids[i])
+        prob_ml = float(probs_model[i])
+        feats: dict[str, float] = {}
+        if cid in raw_indexed.index:
+            feats = extract_features_row(raw_indexed.loc[cid])
+        cov = float(coverages[i])
+
+        # Tabla maestra: pocos features para ML → combinar con heurística de mora
+        if cov < 0.25:
+            prob_final = max(prob_ml, heuristic_probability(feats))
+            nivel = nivel_from_features(prob_ml, feats, umbral_f1, umbral_alto)
+        else:
+            prob_final = prob_ml
+            if prob_final >= umbral_alto:
+                nivel = "alto"
+            elif prob_final >= umbral_f1:
+                nivel = "medio"
+            elif prob_final >= 0.12:
+                nivel = "medio"
+            else:
+                nivel = "bajo"
+
         ag = agencias[i]
         socios.append(
             {
                 "id": str(uuid4()),
-                "cedula": cids[i],
-                "nombre": nombres[i] if nombres[i] and nombres[i] != "nan" else f"Socio {cids[i]}",
+                "cedula": cid,
+                "nombre": nombres[i] if nombres[i] and nombres[i] != "nan" else f"Socio {cid}",
                 "agencia": ag if ag and ag != "nan" else None,
-                "features": {},
+                "features": feats,
                 "prediccion": {
-                    "probabilidad_mora": round(prob, 4),
-                    "nivel_riesgo": _nivel_from_prob(prob, umbral_f1, umbral_alto),
+                    "probabilidad_mora": round(prob_final, 4),
+                    "probabilidad_modelo_ml": round(prob_ml, 6),
+                    "nivel_riesgo": nivel,
                     "nivel_label": niveles_lbl[i],
                     "accion": acciones[i],
                     "modelo": PRODUCTION_MODEL_FILE,
+                    "feature_coverage": round(cov, 4),
+                    "origen_prob": "heuristica_tabla_maestra" if cov < 0.25 else "modelo_ml",
                 },
             }
         )

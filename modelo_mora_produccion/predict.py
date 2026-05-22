@@ -7,6 +7,8 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from prepare_features import prepare_df
+
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MODEL = ROOT / "modelo_mora_futura.pkl"
 DEFAULT_CONFIG = ROOT / "config.json"
@@ -125,21 +127,18 @@ class MoraPredictor:
                 self._xt_agg = pd.DataFrame({"cliente_id": pd.Series(dtype=str)})
 
     def _prepare(self, df: pd.DataFrame) -> pd.DataFrame:
-        p = df.copy()
-        for col in DATE_PREV:
-            if col in p.columns:
-                dt = pd.to_datetime(p[col], errors="coerce")
-                p[f"{col}_dias"] = (self.ref_date - dt).dt.days
+        return prepare_df(df, self._xt_agg, self.encoders, self.ref_date, self.features)
 
-        exclude = set(ID_COLS + LEAKAGE + CAT_PREV + DATE_PREV)
-        Xp = p.drop(columns=[c for c in exclude if c in p.columns], errors="ignore")
-        Xp["cliente_id"] = p["cliente_id"].astype(str).str.strip()
-        Xp = _encode(Xp, CAT_PREV, self.encoders)
-        X = Xp.merge(self._xt_agg, on="cliente_id", how="left")
-        X = X.drop(columns=["cliente_id"], errors="ignore")
-        X = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
-        # Rápido: una sola reindex en lugar de insertar columna por columna
-        return X.reindex(columns=self.features)
+    def _feature_medians(self) -> pd.Series:
+        if "feature_medians" in self.bundle:
+            return pd.Series(self.bundle["feature_medians"]).reindex(self.features)
+        if len(self._xt_agg) == 0:
+            return pd.Series(0.0, index=self.features)
+        ids = self._xt_agg["cliente_id"].head(min(800, len(self._xt_agg))).tolist()
+        batch = pd.DataFrame({"cliente_id": ids})
+        X = prepare_df(batch, self._xt_agg, self.encoders, self.ref_date, self.features)
+        med = X.median(numeric_only=True)
+        return pd.Series({f: float(med[f]) if f in med.index and pd.notna(med[f]) else 0.0 for f in self.features})
 
     def score(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
@@ -147,6 +146,8 @@ class MoraPredictor:
         work = df.copy()
         work["cliente_id"] = work["cliente_id"].astype(str).str.strip()
         X = self._prepare(work)
+        coverage = (X.notna().sum(axis=1) / len(self.features)).astype(float)
+        X = X.fillna(self._feature_medians())
         prob = self.model.predict_proba(X)[:, 1]
 
         if all(c in work.columns for c in ID_COLS):
@@ -158,7 +159,8 @@ class MoraPredictor:
             if col in work.columns:
                 out[col] = work[col].values
 
-        out["prob_mora_futura"] = np.round(prob, 4)
+        out["feature_coverage"] = np.round(coverage.values, 4)
+        out["prob_mora_futura"] = np.round(prob, 6)
         out["pred_mora_futura"] = (prob >= self.umbral_f1).astype(int)
         out["nivel_riesgo"] = np.select(
             [prob >= self.umbral_alto, prob >= self.umbral_f1, prob >= 0.2],
