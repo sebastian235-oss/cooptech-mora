@@ -517,7 +517,9 @@ function App() {
                 sociosFiltered.map((s) => {
                   const p = getPrediccion(s);
                   const prob = p?.probabilidad_mora ?? 0;
+                  const coverage = p?.feature_coverage ?? 1;
                   const nivel = p?.nivel_riesgo ?? "bajo";
+                  const lowCoverage = coverage < 0.35;
                   const feats =
                     s.features ||
                     p?.features_usadas ||
@@ -536,9 +538,12 @@ function App() {
                         )}
                       </td>
                       <td>
-                        <span className="prob-value">
+                        <span className="prob-value" title={lowCoverage ? `Cobertura de datos: ${(coverage * 100).toFixed(0)}%` : undefined}>
                           {formatProbPercent(prob)}
                         </span>
+                        {lowCoverage && (
+                          <span className="coverage-warn">Datos incompletos</span>
+                        )}
                         <div className="progress-bar">
                           <span
                             style={{

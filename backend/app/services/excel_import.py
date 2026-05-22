@@ -81,6 +81,15 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
 
     socios = predict_dataframe(df)
     probs = [s["prediccion"]["probabilidad_mora"] for s in socios]
+    coverages = [s["prediccion"].get("feature_coverage", 0) for s in socios]
+    avg_cov = sum(coverages) / len(coverages) if coverages else 0
+    schema_hint = ""
+    if avg_cov < 0.35:
+        schema_hint = (
+            " Advertencia: el archivo tiene pocas columnas del dataset de prevención "
+            "(cobertura media {:.0%}). Para probabilidades fiables use "
+            "dataset_entrenamiento_prevencion.csv o coloque ese CSV junto al modelo."
+        ).format(avg_cov)
 
     msg_extra = ""
     if truncated:
@@ -95,5 +104,6 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
         "probabilidad_promedio": round(sum(probs) / len(probs), 4) if probs else 0,
         "modelo": "modelo_mora_futura.pkl",
         "truncado": truncated,
-        "mensaje_extra": msg_extra,
+        "mensaje_extra": msg_extra + schema_hint,
+        "cobertura_features_promedio": round(avg_cov, 4),
     }

@@ -7,6 +7,12 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from prepare_features import (
+    PREVENTION_FROM_XT,
+    norm_cliente_id,
+    prepare_df,
+)
+
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MODEL = ROOT / "modelo_mora_futura.pkl"
 DEFAULT_CONFIG = ROOT / "config.json"
@@ -124,46 +130,80 @@ class MoraPredictor:
             else:
                 self._xt_agg = pd.DataFrame({"cliente_id": pd.Series(dtype=str)})
 
-    def _prepare(self, df: pd.DataFrame) -> pd.DataFrame:
-        p = df.copy()
-        for col in DATE_PREV:
-            if col in p.columns:
-                dt = pd.to_datetime(p[col], errors="coerce")
-                p[f"{col}_dias"] = (self.ref_date - dt).dt.days
+        self._prev_snapshot = self._load_prev_snapshot()
+        self._feature_medians = self._load_feature_medians()
 
-        exclude = set(ID_COLS + LEAKAGE + CAT_PREV + DATE_PREV)
-        Xp = p.drop(columns=[c for c in exclude if c in p.columns], errors="ignore")
-        Xp["cliente_id"] = p["cliente_id"].astype(str).str.strip()
-        Xp = _encode(Xp, CAT_PREV, self.encoders)
-        X = Xp.merge(self._xt_agg, on="cliente_id", how="left")
-        drop_xt = [
-            c
-            for c in X.columns
-            if c.startswith("xt_")
-            and any(
-                lk in c
-                for lk in (
-                    "dias_mora",
-                    "saldo_vencido",
-                    "int_mora",
-                    "TARGET_MORA",
-                    "val_morad",
-                    "cuotas_atra",
-                )
-            )
-        ]
-        X = X.drop(columns=drop_xt, errors="ignore")
-        X = X.drop(columns=["cliente_id"], errors="ignore")
-        X = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
-        return X.reindex(columns=self.features)
+    def _prepare(self, df: pd.DataFrame) -> pd.DataFrame:
+        return prepare_df(df, self._xt_agg, self.encoders, self.ref_date, self.features)
+
+    def _load_prev_snapshot(self) -> pd.DataFrame | None:
+        if "prev_latest" in self.bundle:
+            snap = self.bundle["prev_latest"].copy()
+            snap["cliente_id"] = snap["cliente_id"].map(norm_cliente_id)
+            return snap
+        for path in (
+            ROOT / "dataset_entrenamiento_prevencion.csv",
+            ROOT.parent / "dataset_entrenamiento_prevencion.csv",
+        ):
+            if not path.exists():
+                continue
+            df = pd.read_csv(path, low_memory=False)
+            if "cliente_id" not in df.columns and "nro_cliente" in df.columns:
+                df = df.rename(columns={"nro_cliente": "cliente_id"})
+            df["cliente_id"] = df["cliente_id"].map(norm_cliente_id)
+            sort_col = "fecha_corte" if "fecha_corte" in df.columns else None
+            if sort_col:
+                df = df.sort_values(sort_col)
+            return df.drop_duplicates("cliente_id", keep="last")
+        return None
+
+    def _load_feature_medians(self) -> pd.Series:
+        if "feature_medians" in self.bundle:
+            return pd.Series(self.bundle["feature_medians"]).reindex(self.features)
+        medians = {}
+        if len(self._xt_agg) > 0:
+            sample_ids = self._xt_agg["cliente_id"].head(min(1500, len(self._xt_agg))).tolist()
+            batch = pd.DataFrame({"cliente_id": sample_ids})
+            batch = self._enrich_work(batch)
+            X = prepare_df(batch, self._xt_agg, self.encoders, self.ref_date, self.features)
+            med = X.median(numeric_only=True)
+            for f in self.features:
+                if f in med.index and pd.notna(med[f]):
+                    medians[f] = float(med[f])
+        return pd.Series({f: medians.get(f, 0.0) for f in self.features})
+
+    def _enrich_work(self, work: pd.DataFrame) -> pd.DataFrame:
+        """Completa filas con snapshot de prevención y mapeo xt → prevención."""
+        out = work.copy()
+        if "cliente_id" not in out.columns:
+            for alias in ("nro_cliente", "cedula", "id_cliente", "socio_id"):
+                if alias in out.columns:
+                    out = out.rename(columns={alias: "cliente_id"})
+                    break
+        out["cliente_id"] = out["cliente_id"].map(norm_cliente_id)
+
+        if self._prev_snapshot is not None:
+            snap = self._prev_snapshot
+            extra = [c for c in snap.columns if c != "cliente_id" and c not in out.columns]
+            if extra:
+                out = out.merge(snap[["cliente_id", *extra]], on="cliente_id", how="left")
+
+        if len(self._xt_agg) > 0:
+            xt_cols = ["cliente_id"] + [
+                c for c in PREVENTION_FROM_XT.values() if c in self._xt_agg.columns
+            ]
+            merged = out.merge(self._xt_agg[xt_cols].drop_duplicates("cliente_id"), on="cliente_id", how="left")
+            for prev_col, xt_col in PREVENTION_FROM_XT.items():
+                if prev_col not in out.columns and xt_col in merged.columns:
+                    merged[prev_col] = merged[xt_col]
+            out = merged
+
+        return out
 
     def score(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame()
-        work = df.copy()
-        work["cliente_id"] = work["cliente_id"].astype(str).str.strip()
-        X = self._prepare(work)
-        prob = self.model.predict_proba(X)[:, 1]
+        work = self._enrich_work(df)
 
         if all(c in work.columns for c in ID_COLS):
             out = work[ID_COLS].copy()
@@ -174,6 +214,12 @@ class MoraPredictor:
             if col in work.columns:
                 out[col] = work[col].values
 
+        X = self._prepare(work)
+        coverage = (X.notna().sum(axis=1) / len(self.features)).astype(float)
+        X = X.fillna(self._feature_medians)
+        prob = self.model.predict_proba(X)[:, 1]
+
+        out["feature_coverage"] = np.round(coverage.values, 4)
         out["prob_mora_futura"] = np.round(prob, 6)
         out["pred_mora_futura"] = (prob >= self.umbral_f1).astype(int)
         out["nivel_riesgo"] = np.select(

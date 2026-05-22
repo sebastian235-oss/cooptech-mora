@@ -8,6 +8,7 @@ export interface Prediccion {
   nivel_label?: string;
   modelo?: string;
   senales?: string[];
+  feature_coverage?: number;
 }
 
 export interface Socio {

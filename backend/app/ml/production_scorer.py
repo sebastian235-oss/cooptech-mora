@@ -87,12 +87,13 @@ def _norm_cliente_id(value: Any) -> str:
 
 
 def _nivel_from_label(label: str, prob: float, umbral_f1: float, umbral_alto: float) -> str:
+    """Mapea etiqueta del modelo + probabilidad a bajo/medio/alto (umbrales del entrenamiento)."""
     low = (label or "").lower()
-    if "muy alto" in low or prob >= umbral_alto:
+    if prob >= umbral_alto or "muy alto" in low:
         return "alto"
-    if low == "alto" or prob >= umbral_f1:
-        return "alto" if prob >= umbral_alto else "medio"
-    if "medio" in low and prob >= 0.2:
+    if prob >= umbral_f1 or low == "alto":
+        return "medio"
+    if prob >= 0.2 or "medio" in low:
         return "medio"
     return "bajo"
 
@@ -227,6 +228,11 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     probs = scored["prob_mora_futura"].astype(float).values
     niveles_lbl = scored["nivel_riesgo"].astype(str).values
     acciones = scored["accion"].astype(str).values
+    coverages = (
+        scored["feature_coverage"].astype(float).values
+        if "feature_coverage" in scored.columns
+        else [0.0] * n
+    )
     nombres = (
         scored[name_col].astype(str).values
         if name_col and name_col in scored.columns
@@ -259,6 +265,7 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
                     "modelo": PRODUCTION_MODEL_FILE,
                     "features_usadas": feats,
                     "senales": senales,
+                    "feature_coverage": round(float(coverages[i]), 4),
                 },
             }
         )

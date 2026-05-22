@@ -692,3 +692,11 @@ thead th:last-child {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+.coverage-warn {
+  display: block;
+  font-size: 0.68rem;
+  color: #b45309;
+  font-weight: 600;
+  margin-top: 0.2rem;
+}
