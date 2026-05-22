@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.ml.predictor import get_predictor
+from app.ml.predictor import get_predictor, predict_from_features
 from app.schemas import PredictBatchRequest, PredictRequest, PredictResponse
 from app.services import supabase_client
 
@@ -12,7 +12,11 @@ router = APIRouter(prefix="/predict", tags=["predict"])
 @router.post("", response_model=PredictResponse)
 async def predict_single(body: PredictRequest):
     try:
-        result = get_predictor().predict_one(body.features)
+        feats = dict(body.features)
+        if body.socio_id:
+            feats.setdefault("cliente_id", body.socio_id)
+            feats.setdefault("cedula", body.socio_id)
+        result = predict_from_features(feats)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -34,8 +38,9 @@ async def predict_single(body: PredictRequest):
         socio_id=body.socio_id,
         probabilidad_mora=result["probabilidad_mora"],
         nivel_riesgo=result["nivel_riesgo"],
-        features_usadas=result["features_usadas"],
+        features_usadas=result.get("features_usadas", body.features),
         guardado_en_supabase=guardado,
+        modelo=result.get("modelo"),
     )
 
 

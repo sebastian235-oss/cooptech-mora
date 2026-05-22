@@ -96,9 +96,11 @@ class MoraPredictor:
 
         exclude = ID_COLS + LEAKAGE + CAT_PREV + DATE_PREV
         Xp = p.drop(columns=[c for c in exclude if c in p.columns], errors="ignore")
-        Xp["cliente_id"] = p["cliente_id"].values
+        Xp["cliente_id"] = p["cliente_id"].astype(str).str.strip().values
         Xp = _encode(Xp, CAT_PREV, self.encoders)
-        X = Xp.merge(self._xt_agg, on="cliente_id", how="left")
+        xt = self._xt_agg.copy()
+        xt["cliente_id"] = xt["cliente_id"].astype(str).str.strip()
+        X = Xp.merge(xt, on="cliente_id", how="left")
         X = X.drop(columns=["cliente_id"], errors="ignore")
         X = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
         for f in self.features:

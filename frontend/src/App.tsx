@@ -11,7 +11,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchDashboard, uploadExcel } from "./api";
+import {
+  clearUpload,
+  createSocioManual,
+  fetchDashboard,
+  uploadExcel,
+  type SocioManualPayload,
+} from "./api";
 import type { DashboardResponse, NivelRiesgo, Socio } from "./types";
 import "./App.css";
 
@@ -29,6 +35,20 @@ const CHART_TOOLTIP = {
     boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
     fontSize: "13px",
   },
+};
+
+const EMPTY_MANUAL: SocioManualPayload = {
+  cedula: "",
+  nombre: "",
+  agencia: "",
+  ingresos_socio: undefined,
+  egresos_socio: undefined,
+  mora_actual: 0,
+  n_creditos_unicos: 1,
+  dias_desde_ultimo_pago_max: undefined,
+  ratio_egresos_ingresos: undefined,
+  saldo_vencido_actual_total: 0,
+  capacidad_pago: undefined,
 };
 
 function getPrediccion(socio: Socio) {
@@ -50,6 +70,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [showManual, setShowManual] = useState(false);
+  const [manual, setManual] = useState<SocioManualPayload>({ ...EMPTY_MANUAL });
+  const [savingManual, setSavingManual] = useState(false);
 
   const refresh = useCallback(() => {
     return fetchDashboard()
@@ -67,7 +90,9 @@ function App() {
     setError(null);
     try {
       const res = await uploadExcel(file);
-      setUploadMsg(res.mensaje);
+      setUploadMsg(
+        `${res.mensaje} · Modelo: ${res.modo}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
+      );
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al subir archivo");
@@ -76,11 +101,45 @@ function App() {
     }
   };
 
+  const handleCancelUpload = async () => {
+    setError(null);
+    try {
+      const res = await clearUpload();
+      setUploadMsg(res.mensaje);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cancelar");
+    }
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manual.cedula.trim() || !manual.nombre.trim()) {
+      setError("Cédula y nombre son obligatorios");
+      return;
+    }
+    setSavingManual(true);
+    setError(null);
+    try {
+      await createSocioManual(manual);
+      setUploadMsg(`Socio ${manual.nombre} agregado y evaluado.`);
+      setShowManual(false);
+      setManual({ ...EMPTY_MANUAL });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al guardar");
+    } finally {
+      setSavingManual(false);
+    }
+  };
+
   if (loading) return <div className="app loading">Cargando dashboard…</div>;
   if (error && !data) return <div className="app error">Error: {error}</div>;
   if (!data) return null;
 
   const { stats, socios, source } = data;
+  const hasUpload = source === "upload";
+
   const pieData = Object.entries(stats.por_nivel).map(([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1),
     value,
@@ -110,14 +169,30 @@ function App() {
                 type="file"
                 accept=".xlsx,.xls,.csv"
                 disabled={uploading}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
+                onChange={(ev) => {
+                  const f = ev.target.files?.[0];
                   if (f) handleFile(f);
-                  e.target.value = "";
+                  ev.target.value = "";
                 }}
               />
               {uploading ? "Procesando…" : "Subir Excel"}
             </label>
+            {hasUpload && (
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={handleCancelUpload}
+              >
+                Cancelar carga
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setShowManual(true)}
+            >
+              + Cliente manual
+            </button>
             <span className="upload-hint">.xlsx, .xls o .csv</span>
           </div>
           <span className={`badge ${source}`}>{sourceLabel(source)}</span>
@@ -125,7 +200,187 @@ function App() {
       </header>
 
       {uploadMsg && <p className="upload-success">{uploadMsg}</p>}
-      {error && <p className="upload-error">{error}</p>}
+      {error && data && <p className="upload-error">{error}</p>}
+
+      {showManual && (
+        <div className="modal-overlay" onClick={() => setShowManual(false)}>
+          <form
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleManualSubmit}
+          >
+            <h2>Agregar cliente manualmente</h2>
+            <p className="modal-hint">
+              Usa los mismos datos del Excel de entrenamiento para mejores
+              predicciones del modelo.
+            </p>
+            <div className="form-grid">
+              <label>
+                Cédula / ID *
+                <input
+                  required
+                  value={manual.cedula}
+                  onChange={(e) =>
+                    setManual({ ...manual, cedula: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Nombre *
+                <input
+                  required
+                  value={manual.nombre}
+                  onChange={(e) =>
+                    setManual({ ...manual, nombre: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Agencia
+                <input
+                  value={manual.agencia || ""}
+                  onChange={(e) =>
+                    setManual({ ...manual, agencia: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Ingresos socio
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manual.ingresos_socio ?? ""}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      ingresos_socio: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Egresos socio
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manual.egresos_socio ?? ""}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      egresos_socio: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Mora actual
+                <input
+                  type="number"
+                  step="1"
+                  value={manual.mora_actual ?? 0}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      mora_actual: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Días desde último pago
+                <input
+                  type="number"
+                  value={manual.dias_desde_ultimo_pago_max ?? ""}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      dias_desde_ultimo_pago_max: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Ratio egresos / ingresos
+                <input
+                  type="number"
+                  step="0.01"
+                  max={2}
+                  value={manual.ratio_egresos_ingresos ?? ""}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      ratio_egresos_ingresos: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Nº créditos
+                <input
+                  type="number"
+                  value={manual.n_creditos_unicos ?? 1}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      n_creditos_unicos: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Saldo vencido
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manual.saldo_vencido_actual_total ?? 0}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      saldo_vencido_actual_total: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Capacidad de pago
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manual.capacidad_pago ?? ""}
+                  onChange={(e) =>
+                    setManual({
+                      ...manual,
+                      capacidad_pago: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => setShowManual(false)}
+              >
+                Cerrar
+              </button>
+              <button type="submit" className="upload-btn" disabled={savingManual}>
+                {savingManual ? "Calculando…" : "Guardar y evaluar"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <section className="cards">
         <div className="card">
@@ -228,10 +483,13 @@ function App() {
                 const nivel = p?.nivel_riesgo ?? "bajo";
                 const feats = s.features || p?.features_usadas || {};
                 const signals = [
-                  feats.dias_atraso_promedio > 5 && "Atrasos",
+                  (feats.dias_atraso_promedio ?? feats.dias_desde_ultimo_pago_max) >
+                    5 && "Atrasos",
                   feats.variacion_saldo_30d < -0.2 && "Saldo ↓",
                   feats.ratio_pago_cuota < 0.7 && "Pagos bajos",
+                  feats.ratio_egresos_ingresos > 0.85 && "Egresos altos",
                   feats.num_movimientos_30d < 4 && "Poca actividad",
+                  p?.accion && String(p.accion),
                 ].filter(Boolean);
 
                 return (
@@ -250,7 +508,7 @@ function App() {
                       <div className="progress-bar">
                         <span
                           style={{
-                            width: `${prob * 100}%`,
+                            width: `${Math.min(prob * 100, 100)}%`,
                             background: RISK_COLORS[nivel],
                           }}
                         />

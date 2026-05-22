@@ -4,6 +4,9 @@ export interface Prediccion {
   probabilidad_mora: number;
   nivel_riesgo: NivelRiesgo;
   features_usadas?: Record<string, number>;
+  accion?: string;
+  nivel_label?: string;
+  modelo?: string;
 }
 
 export interface Socio {
@@ -35,4 +38,5 @@ export interface PredictResponse {
   nivel_riesgo: NivelRiesgo;
   features_usadas: Record<string, number>;
   guardado_en_supabase: boolean;
+  modelo?: string;
 }

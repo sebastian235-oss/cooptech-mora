@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
-from app.ml.predictor import get_predictor
+from app.ml.predictor import predict_from_features
 from app.schemas import SocioCreate
 from app.services import supabase_client
 
@@ -69,10 +69,9 @@ def _seed_demo():
             },
         },
     ]
-    predictor = get_predictor()
     for s in samples:
         try:
-            pred = predictor.predict_one(s["features"])
+            pred = predict_from_features(s["features"])
             s["prediccion"] = pred
         except Exception:
             s["prediccion"] = {"probabilidad_mora": 0, "nivel_riesgo": "bajo"}
@@ -91,7 +90,7 @@ async def list_socios():
 @router.post("")
 async def create_socio(body: SocioCreate):
     try:
-        pred = get_predictor().predict_one(body.features)
+        pred = predict_from_features(body.to_feature_dict())
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -129,6 +128,9 @@ async def create_socio(body: SocioCreate):
         )
         return {"source": "supabase", "socio": record}
 
+    if _uploaded_socios:
+        _uploaded_socios.append(record)
+        return {"source": "upload", "socio": record}
     _seed_demo()
     _demo_socios.append(record)
     return {"source": "demo", "socio": record}
@@ -157,3 +159,11 @@ async def dashboard():
         "probabilidad_promedio": round(sum(probs) / len(probs), 4) if probs else 0,
     }
     return {"source": source, "stats": stats, "socios": socios_list}
+
+
+@router.delete("/upload")
+async def clear_upload():
+    """Cancela la carga de Excel y vuelve a datos demo."""
+    set_uploaded_socios([])
+    _seed_demo()
+    return {"ok": True, "mensaje": "Carga cancelada. Se restauraron datos de demostración."}
