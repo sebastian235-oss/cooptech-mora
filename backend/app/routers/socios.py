@@ -12,11 +12,17 @@ router = APIRouter(prefix="/socios", tags=["socios"])
 # Datos demo en memoria si Supabase no está configurado
 _demo_socios: list[dict] = []
 _uploaded_socios: list[dict] = []
+_cootech_stats: dict | None = None
 
 
 def set_uploaded_socios(socios: list[dict]) -> None:
     global _uploaded_socios
     _uploaded_socios = socios
+
+
+def set_cootech_stats(stats: dict | None) -> None:
+    global _cootech_stats
+    _cootech_stats = stats
 
 
 def _active_socios() -> list[dict]:
@@ -114,6 +120,8 @@ async def dashboard():
         "por_nivel": by_level,
         "probabilidad_promedio": round(sum(probs) / len(probs), 4) if probs else 0,
     }
+    if _cootech_stats:
+        stats["cootech"] = _cootech_stats
     return {"source": source, "stats": stats, "socios": socios_list}
 
 
@@ -121,5 +129,6 @@ async def dashboard():
 async def clear_upload():
     """Cancela la carga de Excel y vuelve a datos demo."""
     set_uploaded_socios([])
+    set_cootech_stats(None)
     _seed_demo()
     return {"ok": True, "mensaje": "Carga cancelada. Se restauraron datos de demostración."}

@@ -589,3 +589,17 @@ tbody tr:not(:last-child) td {
   border: none;
   cursor: pointer;
 }
+
+.upload-btn.primary-cootech {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #fff;
+  border: none;
+}
+
+.card-sub {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-top: 0.25rem;
+}

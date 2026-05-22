@@ -15,6 +15,7 @@ import {
   clearUpload,
   createSocioManual,
   fetchDashboard,
+  uploadCootech,
   uploadExcel,
   type SocioManualPayload,
 } from "./api";
@@ -84,6 +85,25 @@ function App() {
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 
+  const handleCootechFiles = async (fileList: FileList | File[]) => {
+    const arr = Array.from(fileList);
+    if (!arr.length) return;
+    setUploading(true);
+    setUploadMsg(null);
+    setError(null);
+    try {
+      const res = await uploadCootech(arr);
+      setUploadMsg(
+        `${res.mensaje} · Modelo: ${res.modelo ?? res.modo}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
+      );
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al subir paquete CoopTech");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFile = async (file: File) => {
     setUploading(true);
     setUploadMsg(null);
@@ -138,6 +158,7 @@ function App() {
   if (!data) return null;
 
   const { stats, socios, source } = data;
+  const cootech = stats.cootech;
   const hasUpload = source === "upload";
   const largeDataset = socios.length > 5000;
 
@@ -162,10 +183,24 @@ function App() {
         <span className="header-accent" aria-hidden />
         <div>
           <h1>CoopTech Tulcán — Riesgo de Mora</h1>
-          <p>Perfilamiento transaccional preventivo · DevIAthon CoopTech</p>
+          <p>Riesgo de mora próximo mes · crédito vigente al día · DevIAthon CoopTech</p>
         </div>
         <div className="header-actions">
           <div className="upload-zone">
+            <label className={`upload-btn primary-cootech${uploading ? " disabled" : ""}`}>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                multiple
+                disabled={uploading}
+                onChange={(ev) => {
+                  const list = ev.target.files;
+                  if (list?.length) handleCootechFiles(list);
+                  ev.target.value = "";
+                }}
+              />
+              {uploading ? "Procesando…" : "Paquete CoopTech"}
+            </label>
             <label className={`upload-btn${uploading ? " disabled" : ""}`}>
               <input
                 type="file"
@@ -177,7 +212,7 @@ function App() {
                   ev.target.value = "";
                 }}
               />
-              {uploading ? "Procesando…" : "Subir Excel"}
+              {uploading ? "…" : "Excel único"}
             </label>
             {hasUpload && (
               <button
@@ -195,7 +230,7 @@ function App() {
             >
               + Cliente manual
             </button>
-            <span className="upload-hint">.xlsx, .xls o .csv</span>
+            <span className="upload-hint">Cred + Ahorro + Trns (misma carpeta Datos)</span>
           </div>
           <span className={`badge ${source}`}>{sourceLabel(source)}</span>
         </div>
@@ -209,7 +244,7 @@ function App() {
       )}
       {socios.length === 0 && (
         <p className="upload-hint" style={{ marginBottom: "1rem", textAlign: "center" }}>
-          Sube un Excel (formato entrenamiento) o agrega un cliente manual.
+          Sube el paquete CoopTech (DataSabanaCred + ahorro + transacciones) o Excel único.
         </p>
       )}
       {error && data && <p className="upload-error">{error}</p>}
@@ -395,6 +430,23 @@ function App() {
       )}
 
       <section className="cards">
+        {cootech && (
+          <>
+            <div className="card">
+              <h3>Crédito vigente (al día)</h3>
+              <div className="value">
+                {cootech.monitoreados_preventivos ?? stats.total_socios}
+                <span className="card-sub">
+                  de {cootech.clientes_vigentes ?? "—"} vigentes
+                </span>
+              </div>
+            </div>
+            <div className="card">
+              <h3>Tiempo de análisis</h3>
+              <div className="value">{(cootech.tiempo_ms ?? 0) / 1000}s</div>
+            </div>
+          </>
+        )}
         <div className="card">
           <h3>Socios monitoreados</h3>
           <div className="value">{stats.total_socios}</div>
@@ -496,19 +548,26 @@ function App() {
                 const feats = s.features || p?.features_usadas || {};
                 const dias =
                   feats.dias_desde_ultimo_pago_max ?? feats.dias_atraso_promedio;
-                const signals = [
-                  dias != null &&
-                    dias > 5 &&
-                    (dias <= 15
-                      ? "Retrasos menores"
-                      : `Atraso ${Math.round(dias)} días`),
-                  (feats.saldo_vencido_actual_total ?? 0) > 0 && "Saldo vencido",
-                  (feats.ratio_egresos_ingresos ?? 0) > 0.85 && "Egresos altos",
-                  feats.ratio_pago_cuota != null &&
-                    feats.ratio_pago_cuota < 0.75 &&
-                    "Pagos bajos",
-                  p?.accion && String(p.accion),
-                ].filter(Boolean) as string[];
+                const senalesCootech = p?.senales;
+                const signals = (
+                  senalesCootech?.length
+                    ? senalesCootech
+                    : [
+                        dias != null &&
+                          dias > 5 &&
+                          (dias <= 15
+                            ? "Retrasos menores"
+                            : `Atraso ${Math.round(dias)} días`),
+                        (feats.saldo_vencido_actual_total ?? 0) > 0 &&
+                          "Saldo vencido",
+                        (feats.ratio_egresos_ingresos ?? 0) > 0.85 &&
+                          "Egresos altos",
+                        feats.ratio_pago_cuota != null &&
+                          feats.ratio_pago_cuota < 0.75 &&
+                          "Pagos bajos",
+                        p?.accion && String(p.accion),
+                      ].filter(Boolean)
+                ) as string[];
 
                 return (
                   <tr key={s.id}>

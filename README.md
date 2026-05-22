@@ -87,3 +87,7 @@ Abre http://localhost:5173
 
 - Sube tu modelo real a `modelo_mora_produccion/` y define `feature_columns.json` con las mismas columnas del entrenamiento.
 - Sin Supabase, el sistema funciona en **modo demo** con datos de ejemplo.
+
+## Datos CoopTech
+
+Ver [COOTECH.md](./COOTECH.md). Demo en `samples/cootech_demo/`.

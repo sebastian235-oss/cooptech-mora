@@ -159,3 +159,27 @@ export async function createSocioManual(
 }
 
 export type { PredictResponse };
+export interface UploadCootechResponse {
+  ok: boolean;
+  modo: string;
+  modelo?: string;
+  archivos: number;
+  total_procesados: number;
+  mensaje: string;
+  probabilidad_promedio?: number;
+  stats_cootech?: import("./types").CootechStats;
+}
+
+export async function uploadCootech(files: File[]): Promise<UploadCootechResponse> {
+  const form = new FormData();
+  for (const f of files) {
+    form.append("files", f);
+  }
+  const url = `${API_URL}/socios/upload-cootech`;
+  const res = await fetchWithTimeout(url, { method: "POST", body: form }, 300000);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(parseError(err.detail) || `Error ${res.status}`);
+  }
+  return res.json();
+}

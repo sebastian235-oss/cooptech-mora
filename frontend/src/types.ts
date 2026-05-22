@@ -7,6 +7,9 @@ export interface Prediccion {
   accion?: string;
   nivel_label?: string;
   modelo?: string;
+  senales?: string[];
+  al_dia?: boolean;
+  credito_vigente?: boolean;
 }
 
 export interface Socio {
@@ -24,6 +27,7 @@ export interface DashboardStats {
   total_predicciones: number;
   por_nivel: Record<NivelRiesgo, number>;
   probabilidad_promedio: number;
+  cootech?: CootechStats;
 }
 
 export interface DashboardResponse {
@@ -39,4 +43,17 @@ export interface PredictResponse {
   features_usadas: Record<string, number>;
   guardado_en_supabase: boolean;
   modelo?: string;
+  senales?: string[];
+  al_dia?: boolean;
+  credito_vigente?: boolean;
+}
+
+
+export interface CootechStats {
+  total_clientes?: number;
+  clientes_vigentes?: number;
+  clientes_al_dia?: number;
+  monitoreados_preventivos?: number;
+  tiempo_ms?: number;
+  por_nivel_preventivo?: Record<NivelRiesgo, number>;
 }
