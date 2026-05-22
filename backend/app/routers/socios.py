@@ -91,9 +91,13 @@ async def create_socio(body: SocioCreate):
 @router.get("/dashboard")
 async def dashboard():
     if supabase_client.is_configured() and not _uploaded_socios:
-        stats = await supabase_client.dashboard_stats()
-        socios = await supabase_client.list_socios(50)
-        return {"source": "supabase", "stats": stats, "socios": socios}
+        try:
+            stats = await supabase_client.dashboard_stats()
+            socios = await supabase_client.list_socios(50)
+            return {"source": "supabase", "stats": stats, "socios": socios}
+        except Exception:
+            # Supabase caído o lento: no bloquear el dashboard
+            pass
     _seed_demo()
     socios_list = _active_socios()
     source = "upload" if _uploaded_socios else "demo"

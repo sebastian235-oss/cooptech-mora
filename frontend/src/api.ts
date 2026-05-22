@@ -8,6 +8,29 @@ const API_URL =
   import.meta.env.VITE_API_URL?.replace(/\/$/, "") ||
   (import.meta.env.DEV ? "/api" : "http://localhost:8000/api");
 
+const DEFAULT_TIMEOUT_MS = 120000;
+
+async function fetchWithTimeout(
+  url: string,
+  options?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(
+        `La API tardó más de ${timeoutMs / 1000}s (Render puede estar despertando). Espera e intenta de nuevo.`
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 function connectionHint(): string {
   if (API_URL.startsWith("/")) {
     return "Inicia el backend: cd backend && PYTHONPATH=. uvicorn app.main:app --reload --port 8000";
@@ -22,7 +45,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       headers: { "Content-Type": "application/json", ...options?.headers },
       ...options,
     });
@@ -81,7 +104,7 @@ export async function uploadExcel(file: File): Promise<UploadExcelResponse> {
   form.append("file", file);
   const url = `${API_URL}/socios/upload-excel`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: "POST",
       body: form,
       signal: controller.signal,

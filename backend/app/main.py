@@ -10,16 +10,28 @@ app = FastAPI(
     version="1.0.0",
 )
 
-origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins if origins != ["*"] else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_raw_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+_use_wildcard = not _raw_origins or _raw_origins == ["*"]
 
-api = FastAPI()
+# credentials=True + allow_origins=["*"] rompe el fetch en el navegador (CORS)
+if _use_wildcard:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_raw_origins,
+        allow_origin_regex=r"https://.*\.vercel\.app",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 prefix = settings.api_prefix
 
 app.include_router(health.router, prefix=prefix)
