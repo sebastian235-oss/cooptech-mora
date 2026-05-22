@@ -14,10 +14,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Train demo model
-        run: python3 modelo_mora_produccion/train_demo_model.py
       - name: Install backend deps
         run: pip install -r backend/requirements.txt
+      - name: Ensure demo model artifacts
+        run: |
+          if [ ! -f modelo_mora_produccion/modelo_mora.pkl ]; then
+            python3 modelo_mora_produccion/train_demo_model.py
+          fi
       - name: Smoke test API
         run: |
           cd backend
