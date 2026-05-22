@@ -1,0 +1,107 @@
+{
+  "modelo": "LightGBM — Prevención mora futura",
+  "version": "2026.05.22",
+  "target": "target_mora_futura",
+  "descripcion": "Predice si un socio CON CRÉDITO VIGENTE y AL DÍA caerá en mora en el período siguiente.",
+  "sin_fugas": true,
+  "variables_excluidas_leakage": [
+    "mora_actual",
+    "max_dias_mora_actual",
+    "dias_mora_futuro",
+    "saldo_vencido_futuro",
+    "target_mora_futura"
+  ],
+  "no_usar_para_scoring": [
+    "dias_mora",
+    "saldo_vencido",
+    "TARGET_MORA",
+    "mora_actual",
+    "dias_mora_futuro",
+    "saldo_vencido_futuro"
+  ],
+  "dataset_entrenamiento": "dataset_entrenamiento_prevencion.csv",
+  "dataset_validacion_holdout": "dataset_test_temporal.csv",
+  "registros_entrenamiento": 44610,
+  "features_count": 185,
+  "umbrales": {
+    "f1_optimo": 0.39000000000000007,
+    "alerta_alta": 0.5
+  },
+  "metricas_validacion_interna": {
+    "AUC_ROC": 0.9754,
+    "AUC_PR": 0.7771,
+    "Brier": 0.0204
+  },
+  "metricas_holdout_test_temporal": {
+    "AUC_ROC": 0.9986,
+    "AUC_PR": 0.9891,
+    "Brier": 0.0029,
+    "Precision": 0.9493,
+    "Recall": 0.9721,
+    "tasa_mora_real": 0.0458,
+    "n_preventivos_detectados": 34
+  },
+  "top_features": [
+    {
+      "feature": "xt_capacidad_deposito_vs_monto",
+      "importancia": 914
+    },
+    {
+      "feature": "xt_int_normal",
+      "importancia": 812
+    },
+    {
+      "feature": "dias_desde_ultimo_pago_max",
+      "importancia": 748
+    },
+    {
+      "feature": "dia_pago_min",
+      "importancia": 683
+    },
+    {
+      "feature": "xt_total_volumen_depositado",
+      "importancia": 666
+    },
+    {
+      "feature": "antiguedad_credito_max",
+      "importancia": 576
+    },
+    {
+      "feature": "xt_pct_capital_pendiente",
+      "importancia": 566
+    },
+    {
+      "feature": "antiguedad_credito_prom",
+      "importancia": 536
+    },
+    {
+      "feature": "dias_desde_ultimo_pago_prom",
+      "importancia": 498
+    },
+    {
+      "feature": "dias_hasta_fin_min",
+      "importancia": 492
+    },
+    {
+      "feature": "xt_int_devengado",
+      "importancia": 485
+    },
+    {
+      "feature": "cnt_causal_12.0_60d",
+      "importancia": 480
+    },
+    {
+      "feature": "dia_pago_prom",
+      "importancia": 478
+    },
+    {
+      "feature": "dias_hasta_fin_prom",
+      "importancia": 477
+    },
+    {
+      "feature": "ratio_ahorro_ingresos",
+      "importancia": 436
+    }
+  ],
+  "schema_requerido": "dataset_entrenamiento_prevencion.csv (162 columnas, sin target en scoring)"
+}
