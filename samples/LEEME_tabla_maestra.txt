@@ -1,0 +1,7 @@
+Coloca aquí tu archivo para probar en local:
+  tabla_maestra_mora_test.xlsx  (o copia: tablas_maestra_mora,test.xlsx desde tu PC)
+
+En Windows:
+  copy "C:\Users\gt\Desktop\tabla_maestra_mora,test.xlsx" samples\
+
+Luego: cd backend && PYTHONPATH=. python scripts/analyze_excel.py ../samples/tabla_maestra_mora_test.xlsx
