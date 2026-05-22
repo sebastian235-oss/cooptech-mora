@@ -30,7 +30,8 @@ FEATURE_COLUMNS = [
     "gastos_estimados",
 ]
 
-OUT_DIR = Path(__file__).parent
+OUT_DIR = Path(__file__).parent / "demo"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def synthetic_data(n: int = 2000) -> tuple[pd.DataFrame, np.ndarray]:

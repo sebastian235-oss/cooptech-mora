@@ -1,4 +1,4 @@
-"""Integración con modelo_mora_produccion/predict.py (LightGBM mora futura)."""
+"""Scoring con modelo_mora_futura.pkl (único modelo de producción)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import numpy as np
 import pandas as pd
 
 from app.config import settings
@@ -21,6 +20,9 @@ if str(MODEL_DIR) not in sys.path:
 
 _prod_instance = None
 _prod_error: str | None = None
+
+# Solo este archivo es el modelo activo
+PRODUCTION_MODEL_FILE = "modelo_mora_futura.pkl"
 
 
 def _nivel_from_prob(prob: float, umbral_f1: float, umbral_alto: float) -> str:
@@ -37,20 +39,25 @@ def get_production_predictor():
     global _prod_instance, _prod_error
     if _prod_instance is not None:
         return _prod_instance
-    model_path = MODEL_DIR / "modelo_mora_futura.pkl"
+    model_path = MODEL_DIR / PRODUCTION_MODEL_FILE
     if not model_path.exists():
-        _prod_error = "No existe modelo_mora_futura.pkl"
+        _prod_error = f"Falta {PRODUCTION_MODEL_FILE} en {MODEL_DIR}"
         return None
     try:
         from predict import MoraPredictor  # noqa: PLC0415
 
-        _prod_instance = MoraPredictor()
+        _prod_instance = MoraPredictor(model_path=model_path)
         _prod_error = None
-        logger.info("Modelo producción cargado (%s features)", len(_prod_instance.features))
+        logger.info(
+            "Modelo producción OK: %s (%d features, umbral_f1=%.2f)",
+            PRODUCTION_MODEL_FILE,
+            len(_prod_instance.features),
+            _prod_instance.umbral_f1,
+        )
         return _prod_instance
     except Exception as exc:
         _prod_error = str(exc)
-        logger.exception("Error cargando modelo producción: %s", exc)
+        logger.exception("Error cargando modelo: %s", exc)
         return None
 
 
@@ -71,55 +78,48 @@ def _ensure_cliente_id(df: pd.DataFrame) -> pd.DataFrame:
                 out = out.rename(columns={alias: "cliente_id"})
                 break
     if "cliente_id" not in out.columns:
-        out["cliente_id"] = [f"FILA-{i + 1}" for i in range(len(out))]
+        raise ValueError("Falta columna cliente_id / cedula / nro_cliente")
     out["cliente_id"] = out["cliente_id"].astype(str).str.strip()
     return out
+
+
+def _pick_name_column(df: pd.DataFrame) -> str | None:
+    for c in ("nombre", "nombre_socio", "nombre_cliente", "socio"):
+        if c in df.columns:
+            return c
+    return None
 
 
 def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     prod = get_production_predictor()
     if prod is None:
-        raise RuntimeError(
-            production_error() or "Modelo de producción no disponible"
-        )
+        raise RuntimeError(production_error() or "Modelo no disponible")
 
     raw = _ensure_cliente_id(df)
-    name_col = next(
-        (c for c in ("nombre", "nombre_socio", "nombre_cliente") if c in raw.columns),
-        None,
-    )
-    agency_col = next((c for c in ("agencia", "sucursal", "oficina") if c in raw.columns), None)
+    # Una fila por socio (evita duplicados que distorsionan el score)
+    raw = raw.drop_duplicates(subset=["cliente_id"], keep="last").reset_index(drop=True)
 
     scored = prod.score(raw)
+    if scored.empty:
+        return []
+
+    name_col = _pick_name_column(scored)
+    if not name_col:
+        name_col = _pick_name_column(raw)
+    agency_col = next((c for c in ("agencia", "sucursal", "oficina") if c in raw.columns), None)
+
     socios: list[dict[str, Any]] = []
-
-    for i, srow in scored.reset_index(drop=True).iterrows():
+    for srow in scored.to_dict("records"):
         cid = str(srow["cliente_id"])
-        orig = raw[raw["cliente_id"] == cid]
-        orow = orig.iloc[0] if len(orig) else raw.iloc[i] if i < len(raw) else raw.iloc[0]
-
+        prob = float(srow["prob_mora_futura"])
         nombre = (
-            str(orow[name_col]).strip()
-            if name_col and pd.notna(orow.get(name_col))
+            str(srow.get(name_col or "", "")).strip()
+            if name_col and pd.notna(srow.get(name_col))
             else f"Socio {cid}"
         )
-        agencia = (
-            str(orow[agency_col]).strip()
-            if agency_col and pd.notna(orow.get(agency_col))
-            else None
-        )
-
-        prob = float(srow["prob_mora_futura"])
-        features = {}
-        for col in raw.columns:
-            if col in ("cliente_id", name_col, agency_col):
-                continue
-            val = orow.get(col)
-            if pd.notna(val):
-                try:
-                    features[col] = float(val)
-                except (TypeError, ValueError):
-                    pass
+        agencia = None
+        if agency_col and pd.notna(srow.get(agency_col)):
+            agencia = str(srow.get(agency_col)).strip()
 
         socios.append(
             {
@@ -127,15 +127,13 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
                 "cedula": cid,
                 "nombre": nombre,
                 "agencia": agencia,
-                "features": features,
+                "features": {},
                 "prediccion": {
                     "probabilidad_mora": round(prob, 4),
-                    "nivel_riesgo": _nivel_from_prob(
-                        prob, prod.umbral_f1, prod.umbral_alto
-                    ),
+                    "nivel_riesgo": _nivel_from_prob(prob, prod.umbral_f1, prod.umbral_alto),
                     "nivel_label": str(srow.get("nivel_riesgo", "")),
                     "accion": str(srow.get("accion", "")),
-                    "modelo": "modelo_mora_futura",
+                    "modelo": PRODUCTION_MODEL_FILE,
                 },
             }
         )

@@ -47,17 +47,31 @@ export interface UploadExcelResponse {
 }
 
 export async function uploadExcel(file: File): Promise<UploadExcelResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_URL}/socios/upload-excel`, {
-    method: "POST",
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(parseError(err.detail) || `Error ${res.status}`);
+  try {
+    const res = await fetch(`${API_URL}/socios/upload-excel`, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(parseError(err.detail) || `Error ${res.status}`);
+    }
+    return res.json();
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(
+        "El análisis tardó demasiado. Prueba con menos filas o divide el archivo."
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json();
 }
 
 export async function clearUpload(): Promise<{ ok: boolean; mensaje: string }> {

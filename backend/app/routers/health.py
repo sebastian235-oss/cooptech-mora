@@ -23,10 +23,13 @@ def health():
     return {
         "status": "ok" if ok else "degraded",
         "app": settings.app_name,
+        "modelo_activo": "modelo_mora_futura.pkl" if prod_ok else None,
         "modelo_produccion": prod_ok,
         "modelo_produccion_error": production_scorer.production_error(),
         "modelo_demo": demo_ok,
+        "modelo_demo_path": "demo/modelo_mora.pkl",
         "modelo_demo_error": demo_error,
+        "max_filas_excel": settings.max_upload_rows,
         "supabase_configured": is_configured(),
         "model_dir": str(settings.model_dir),
     }

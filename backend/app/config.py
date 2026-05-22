@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
 
     model_dir: Path = Path(__file__).resolve().parents[2] / "modelo_mora_produccion"
+    max_upload_rows: int = 5000
+    sync_supabase_on_upload: bool = False
 
 
 settings = Settings()

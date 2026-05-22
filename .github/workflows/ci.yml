@@ -18,7 +18,7 @@ jobs:
         run: pip install -r backend/requirements.txt
       - name: Ensure demo model artifacts
         run: |
-          if [ ! -f modelo_mora_produccion/modelo_mora.pkl ]; then
+          if [ ! -f modelo_mora_produccion/demo/modelo_mora.pkl ]; then
             python3 modelo_mora_produccion/train_demo_model.py
           fi
       - name: Smoke test API
