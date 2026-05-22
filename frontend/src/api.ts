@@ -170,16 +170,71 @@ export interface UploadCootechResponse {
   stats_cootech?: import("./types").CootechStats;
 }
 
-export async function uploadCootech(files: File[]): Promise<UploadCootechResponse> {
-  const form = new FormData();
-  for (const f of files) {
-    form.append("files", f);
+export type CootechUploadProgress = (
+  current: number,
+  total: number,
+  filename: string
+) => void;
+
+/** Sube los 12 archivos uno por uno (evita límite de 80 MB del paquete único). */
+export async function uploadCootech(
+  files: File[],
+  onProgress?: CootechUploadProgress
+): Promise<UploadCootechResponse> {
+  const total = files.length;
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  const maxBundleMb = 70;
+  if (totalBytes <= maxBundleMb * 1024 * 1024 && total <= 3) {
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+    const res = await fetchWithTimeout(
+      `${API_URL}/socios/upload-cootech`,
+      { method: "POST", body: form },
+      300000
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(parseError(err.detail) || `Error ${res.status}`);
+    }
+    return res.json();
   }
-  const url = `${API_URL}/socios/upload-cootech`;
-  const res = await fetchWithTimeout(url, { method: "POST", body: form }, 300000);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(parseError(err.detail) || `Error ${res.status}`);
+
+  const sess = await request<{ session_id: string }>(
+    "/socios/upload-cootech/session",
+    { method: "POST" }
+  );
+  const sessionId = sess.session_id;
+
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    onProgress?.(i + 1, total, f.name);
+    const form = new FormData();
+    form.append("session_id", sessionId);
+    form.append("file", f);
+    const res = await fetchWithTimeout(
+      `${API_URL}/socios/upload-cootech/file`,
+      { method: "POST", body: form },
+      300000
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(
+        parseError(err.detail) || `Error subiendo ${f.name} (${res.status})`
+      );
+    }
   }
-  return res.json();
+
+  onProgress?.(total, total, "Analizando…");
+  const procForm = new FormData();
+  procForm.append("session_id", sessionId);
+  const procRes = await fetchWithTimeout(
+    `${API_URL}/socios/upload-cootech/process`,
+    { method: "POST", body: procForm },
+    300000
+  );
+  if (!procRes.ok) {
+    const err = await procRes.json().catch(() => ({ detail: procRes.statusText }));
+    throw new Error(parseError(err.detail) || `Error ${procRes.status}`);
+  }
+  return procRes.json();
 }

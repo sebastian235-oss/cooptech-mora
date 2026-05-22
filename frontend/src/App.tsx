@@ -74,6 +74,7 @@ function App() {
   const [showManual, setShowManual] = useState(false);
   const [manual, setManual] = useState<SocioManualPayload>({ ...EMPTY_MANUAL });
   const [savingManual, setSavingManual] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     return fetchDashboard()
@@ -92,7 +93,13 @@ function App() {
     setUploadMsg(null);
     setError(null);
     try {
-      const res = await uploadCootech(arr);
+      setUploadProgress("Preparando…");
+      const res = await uploadCootech(arr, (cur, tot, name) => {
+        setUploadProgress(
+          cur <= tot ? `Subiendo ${cur}/${tot}: ${name}` : name
+        );
+      });
+      setUploadProgress(null);
       setUploadMsg(
         `${res.mensaje} · Modelo: ${res.modelo ?? res.modo}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
       );
@@ -101,6 +108,7 @@ function App() {
       setError(e instanceof Error ? e.message : "Error al subir paquete CoopTech");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -236,6 +244,7 @@ function App() {
         </div>
       </header>
 
+      {uploadProgress && <p className="upload-success">{uploadProgress}</p>}
       {uploadMsg && <p className="upload-success">{uploadMsg}</p>}
       {largeDataset && (
         <p className="upload-success">

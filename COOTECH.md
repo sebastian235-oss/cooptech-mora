@@ -8,7 +8,7 @@
 | `DatsSabanaAhorro` | `DatsSabanaAhorroMayo1_2026.csv` | Saldos y variación de ahorro |
 | `Trns` | `Trns 01 10 Mayo 2026.csv` | Movimientos y actividad |
 
-Sube **todos** a la vez con **Paquete CoopTech** en el dashboard (o `POST /api/socios/upload-cootech`).
+Sube **todos** con **Paquete CoopTech** (la app los envía **archivo por archivo** si el paquete pesa más de ~70 MB) en el dashboard (o `POST /api/socios/upload-cootech`).
 
 ## Qué predice
 
