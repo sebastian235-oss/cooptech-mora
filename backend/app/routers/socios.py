@@ -26,56 +26,8 @@ def _active_socios() -> list[dict]:
 
 
 def _seed_demo():
-    if _demo_socios:
-        return
-    samples = [
-        {
-            "id": str(uuid4()),
-            "cedula": "1723456789",
-            "nombre": "María González",
-            "agencia": "Tulcán Centro",
-            "features": {
-                "dias_atraso_promedio": 2,
-                "ratio_pago_cuota": 0.95,
-                "saldo_promedio_cuenta": 1200,
-                "variacion_saldo_30d": -0.15,
-                "num_movimientos_30d": 8,
-            },
-        },
-        {
-            "id": str(uuid4()),
-            "cedula": "1712345678",
-            "nombre": "Carlos Pérez",
-            "agencia": "Tulcán Norte",
-            "features": {
-                "dias_atraso_promedio": 12,
-                "ratio_pago_cuota": 0.55,
-                "saldo_promedio_cuenta": 180,
-                "variacion_saldo_30d": -0.45,
-                "num_movimientos_30d": 2,
-            },
-        },
-        {
-            "id": str(uuid4()),
-            "cedula": "1709876543",
-            "nombre": "Ana Rivadeneira",
-            "agencia": "Tulcán Sur",
-            "features": {
-                "dias_atraso_promedio": 0,
-                "ratio_pago_cuota": 1.0,
-                "saldo_promedio_cuenta": 3500,
-                "variacion_saldo_30d": 0.05,
-                "num_movimientos_30d": 15,
-            },
-        },
-    ]
-    for s in samples:
-        try:
-            pred = predict_from_features(s["features"])
-            s["prediccion"] = pred
-        except Exception:
-            s["prediccion"] = {"probabilidad_mora": 0, "nivel_riesgo": "bajo"}
-        _demo_socios.append(s)
+    """Sin datos demo: usa Subir Excel o cliente manual."""
+    return
 
 
 @router.get("")

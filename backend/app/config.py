@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
 
     model_dir: Path = Path(__file__).resolve().parents[2] / "modelo_mora_produccion"
-    max_upload_rows: int = 5000
+    # 0 = sin límite (procesa todo el archivo). Ej: 25000 para tope opcional.
+    max_upload_rows: int = 0
     sync_supabase_on_upload: bool = False
 
 

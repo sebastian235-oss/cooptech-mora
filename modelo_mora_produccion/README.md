@@ -1,35 +1,30 @@
-# Modelo de producción — CoopTech Mora
+# modelo_mora_produccion — Modelo entrenado CoopTech
 
-## Archivo activo (único para predicciones)
+## Archivos obligatorios (copiar desde tu PC)
 
-| Archivo | Uso |
-|---------|-----|
-| **modelo_mora_futura.pkl** | Modelo LightGBM entrenado (185 features) |
-| **config.json** | Umbrales y métricas |
-| **predict.py** | Lógica de scoring |
+Copia **toda** tu carpeta entrenada, por ejemplo desde:
 
-## Carpeta `demo/` (solo respaldo)
+`C:\Users\gt\Desktop\ggg\modelo_mora_produccion`
 
-| Archivo | Uso |
-|---------|-----|
-| demo/modelo_mora.pkl | RandomForest demo — **no usar en producción** |
-| demo/scaler.pkl | Escalador del demo |
-| demo/feature_columns.json | 12 variables del demo |
+| Archivo | Requerido |
+|---------|-----------|
+| **modelo_mora_futura.pkl** | Sí — modelo LightGBM |
+| **config.json** | Sí — umbrales y configuración |
+| **predict.py** | Sí — lógica de scoring |
 
-> **Importante:** No dejes `modelo_mora.pkl` en la raíz de esta carpeta. Eso confundía al sistema. Solo debe existir `modelo_mora_futura.pkl` aquí.
+Opcional: `datos_entrenamiento_x_train.csv` (solo si el .pkl no trae `xt_agg` embebido).
 
-## Generar demo (opcional)
+## No usar en esta carpeta
+
+- No agregues `modelo_mora.pkl` ni `scaler.pkl` sueltos (eran del demo viejo).
+- Solo debe existir **un** modelo activo: `modelo_mora_futura.pkl`.
+
+## Probar localmente
 
 ```bash
-python train_demo_model.py
+python predict.py ruta_a_tu_archivo.csv
 ```
 
-Guarda artefactos en `demo/`.
+## En la API web
 
-## Uso
-
-```python
-from predict import MoraPredictor
-pred = MoraPredictor()
-resultado = pred.score(mi_dataframe)
-```
+El backend carga automáticamente `modelo_mora_futura.pkl` y procesa Excel/CSV **sin límite de filas** (20.000+).

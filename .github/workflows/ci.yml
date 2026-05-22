@@ -16,16 +16,20 @@ jobs:
           python-version: "3.12"
       - name: Install backend deps
         run: pip install -r backend/requirements.txt
-      - name: Ensure demo model artifacts
+      - name: Verify production model loads
         run: |
-          if [ ! -f modelo_mora_produccion/demo/modelo_mora.pkl ]; then
-            python3 modelo_mora_produccion/train_demo_model.py
-          fi
+          python3 -c "
+          import sys
+          sys.path.insert(0, 'backend')
+          from app.ml import production_scorer
+          assert production_scorer.production_available(), production_scorer.production_error()
+          print('OK modelo_mora_futura.pkl')
+          "
       - name: Smoke test API
         run: |
           cd backend
           PYTHONPATH=. uvicorn app.main:app --host 127.0.0.1 --port 8000 &
-          sleep 3
+          sleep 4
           curl -sf http://127.0.0.1:8000/api/health
           curl -sf http://127.0.0.1:8000/api/socios/dashboard | head -c 200
 

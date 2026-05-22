@@ -73,5 +73,5 @@ async def upload_excel(file: UploadFile = File(...)):
         "total_procesados": result["total"],
         "probabilidad_promedio": result.get("probabilidad_promedio"),
         "columnas_detectadas": result.get("columnas_detectadas", []),
-        "mensaje": f"Se analizaron {result['total']} socios con el modelo de producción.{extra}{trunc_txt}",
+        "mensaje": f"Se analizaron {result['total']} socios con modelo_mora_futura.pkl.{extra}{trunc_txt}",
     }

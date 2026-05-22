@@ -1,4 +1,4 @@
-"""Scoring con modelo_mora_futura.pkl (único modelo de producción)."""
+"""Scoring exclusivo con modelo_mora_futura.pkl (carpeta modelo_mora_produccion)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ if str(MODEL_DIR) not in sys.path:
 _prod_instance = None
 _prod_error: str | None = None
 
-# Solo este archivo es el modelo activo
 PRODUCTION_MODEL_FILE = "modelo_mora_futura.pkl"
 
 
@@ -41,7 +40,10 @@ def get_production_predictor():
         return _prod_instance
     model_path = MODEL_DIR / PRODUCTION_MODEL_FILE
     if not model_path.exists():
-        _prod_error = f"Falta {PRODUCTION_MODEL_FILE} en {MODEL_DIR}"
+        _prod_error = (
+            f"Falta {PRODUCTION_MODEL_FILE}. Copia tu carpeta entrenada "
+            f"modelo_mora_produccion/ al proyecto (debe incluir .pkl y config.json)."
+        )
         return None
     try:
         from predict import MoraPredictor  # noqa: PLC0415
@@ -49,10 +51,9 @@ def get_production_predictor():
         _prod_instance = MoraPredictor(model_path=model_path)
         _prod_error = None
         logger.info(
-            "Modelo producción OK: %s (%d features, umbral_f1=%.2f)",
+            "Modelo activo: %s (%d features)",
             PRODUCTION_MODEL_FILE,
             len(_prod_instance.features),
-            _prod_instance.umbral_f1,
         )
         return _prod_instance
     except Exception as exc:
@@ -78,16 +79,9 @@ def _ensure_cliente_id(df: pd.DataFrame) -> pd.DataFrame:
                 out = out.rename(columns={alias: "cliente_id"})
                 break
     if "cliente_id" not in out.columns:
-        raise ValueError("Falta columna cliente_id / cedula / nro_cliente")
+        raise ValueError("Falta columna: cedula, cliente_id o nro_cliente.")
     out["cliente_id"] = out["cliente_id"].astype(str).str.strip()
     return out
-
-
-def _pick_name_column(df: pd.DataFrame) -> str | None:
-    for c in ("nombre", "nombre_socio", "nombre_cliente", "socio"):
-        if c in df.columns:
-            return c
-    return None
 
 
 def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -96,43 +90,72 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
         raise RuntimeError(production_error() or "Modelo no disponible")
 
     raw = _ensure_cliente_id(df)
-    # Una fila por socio (evita duplicados que distorsionan el score)
     raw = raw.drop_duplicates(subset=["cliente_id"], keep="last").reset_index(drop=True)
 
     scored = prod.score(raw)
-    if scored.empty:
+    n = len(scored)
+    if n == 0:
         return []
 
-    name_col = _pick_name_column(scored)
+    name_col = next(
+        (c for c in ("nombre", "nombre_socio", "nombre_cliente", "socio") if c in scored.columns),
+        None,
+    )
     if not name_col:
-        name_col = _pick_name_column(raw)
-    agency_col = next((c for c in ("agencia", "sucursal", "oficina") if c in raw.columns), None)
-
-    socios: list[dict[str, Any]] = []
-    for srow in scored.to_dict("records"):
-        cid = str(srow["cliente_id"])
-        prob = float(srow["prob_mora_futura"])
-        nombre = (
-            str(srow.get(name_col or "", "")).strip()
-            if name_col and pd.notna(srow.get(name_col))
-            else f"Socio {cid}"
+        name_col = next(
+            (c for c in ("nombre", "nombre_socio", "nombre_cliente", "socio") if c in raw.columns),
+            None,
         )
-        agencia = None
-        if agency_col and pd.notna(srow.get(agency_col)):
-            agencia = str(srow.get(agency_col)).strip()
+    agency_col = next(
+        (c for c in ("agencia", "sucursal", "oficina") if c in scored.columns or c in raw.columns),
+        None,
+    )
 
+    if name_col and name_col not in scored.columns and name_col in raw.columns:
+        scored = scored.merge(
+            raw[["cliente_id", name_col]].drop_duplicates("cliente_id"),
+            on="cliente_id",
+            how="left",
+        )
+    if agency_col and agency_col not in scored.columns and agency_col in raw.columns:
+        scored = scored.merge(
+            raw[["cliente_id", agency_col]].drop_duplicates("cliente_id"),
+            on="cliente_id",
+            how="left",
+        )
+
+    cids = scored["cliente_id"].astype(str).values
+    probs = scored["prob_mora_futura"].astype(float).values
+    niveles_lbl = scored["nivel_riesgo"].astype(str).values
+    acciones = scored["accion"].astype(str).values
+    nombres = (
+        scored[name_col].astype(str).values
+        if name_col and name_col in scored.columns
+        else [f"Socio {c}" for c in cids]
+    )
+    agencias = (
+        scored[agency_col].astype(str).values
+        if agency_col and agency_col in scored.columns
+        else [None] * n
+    )
+
+    umbral_f1, umbral_alto = prod.umbral_f1, prod.umbral_alto
+    socios: list[dict[str, Any]] = []
+    for i in range(n):
+        prob = float(probs[i])
+        ag = agencias[i]
         socios.append(
             {
                 "id": str(uuid4()),
-                "cedula": cid,
-                "nombre": nombre,
-                "agencia": agencia,
+                "cedula": cids[i],
+                "nombre": nombres[i] if nombres[i] and nombres[i] != "nan" else f"Socio {cids[i]}",
+                "agencia": ag if ag and ag != "nan" else None,
                 "features": {},
                 "prediccion": {
                     "probabilidad_mora": round(prob, 4),
-                    "nivel_riesgo": _nivel_from_prob(prob, prod.umbral_f1, prod.umbral_alto),
-                    "nivel_label": str(srow.get("nivel_riesgo", "")),
-                    "accion": str(srow.get("accion", "")),
+                    "nivel_riesgo": _nivel_from_prob(prob, umbral_f1, umbral_alto),
+                    "nivel_label": niveles_lbl[i],
+                    "accion": acciones[i],
                     "modelo": PRODUCTION_MODEL_FILE,
                 },
             }

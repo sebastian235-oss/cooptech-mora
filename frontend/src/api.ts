@@ -48,7 +48,7 @@ export interface UploadExcelResponse {
 
 export async function uploadExcel(file: File): Promise<UploadExcelResponse> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120000);
+  const timeout = setTimeout(() => controller.abort(), 300000);
   const form = new FormData();
   form.append("file", file);
   try {
