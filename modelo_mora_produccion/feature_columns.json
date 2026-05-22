@@ -1,0 +1,16 @@
+{
+  "feature_columns": [
+    "dias_atraso_promedio",
+    "ratio_pago_cuota",
+    "saldo_promedio_cuenta",
+    "variacion_saldo_30d",
+    "num_movimientos_30d",
+    "monto_pagos_30d",
+    "antiguedad_socio_meses",
+    "monto_credito",
+    "cuotas_pagadas",
+    "cuotas_totales",
+    "ingresos_estimados",
+    "gastos_estimados"
+  ]
+}

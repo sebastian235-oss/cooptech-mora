@@ -1,0 +1,5 @@
+insert into public.socios (cedula, nombre, agencia, features) values
+  ('1723456789', 'María González', 'Tulcán Centro', '{"dias_atraso_promedio":2,"ratio_pago_cuota":0.95,"saldo_promedio_cuenta":1200,"variacion_saldo_30d":-0.15,"num_movimientos_30d":8,"monto_pagos_30d":800,"antiguedad_socio_meses":48,"monto_credito":5000,"cuotas_pagadas":10,"cuotas_totales":24,"ingresos_estimados":1200,"gastos_estimados":900}'),
+  ('1712345678', 'Carlos Pérez', 'Tulcán Norte', '{"dias_atraso_promedio":12,"ratio_pago_cuota":0.55,"saldo_promedio_cuenta":180,"variacion_saldo_30d":-0.45,"num_movimientos_30d":2,"monto_pagos_30d":120,"antiguedad_socio_meses":24,"monto_credito":8000,"cuotas_pagadas":4,"cuotas_totales":36,"ingresos_estimados":900,"gastos_estimados":1100}'),
+  ('1709876543', 'Ana Rivadeneira', 'Tulcán Sur', '{"dias_atraso_promedio":0,"ratio_pago_cuota":1.0,"saldo_promedio_cuenta":3500,"variacion_saldo_30d":0.05,"num_movimientos_30d":15,"monto_pagos_30d":1500,"antiguedad_socio_meses":96,"monto_credito":3000,"cuotas_pagadas":18,"cuotas_totales":18,"ingresos_estimados":2000,"gastos_estimados":1200}')
+on conflict (cedula) do nothing;
