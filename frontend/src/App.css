@@ -661,6 +661,13 @@ tbody tr:not(:last-child) td {
   gap: 0.4rem;
 }
 
+
+.signal-tag--model {
+  color: #fde68a;
+  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  border-color: #d97706;
+}
+
 .signal-tag {
   display: inline-block;
   padding: 0.3rem 0.55rem;

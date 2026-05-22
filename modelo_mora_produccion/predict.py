@@ -136,9 +136,25 @@ class MoraPredictor:
         Xp["cliente_id"] = p["cliente_id"].astype(str).str.strip()
         Xp = _encode(Xp, CAT_PREV, self.encoders)
         X = Xp.merge(self._xt_agg, on="cliente_id", how="left")
+        drop_xt = [
+            c
+            for c in X.columns
+            if c.startswith("xt_")
+            and any(
+                lk in c
+                for lk in (
+                    "dias_mora",
+                    "saldo_vencido",
+                    "int_mora",
+                    "TARGET_MORA",
+                    "val_morad",
+                    "cuotas_atra",
+                )
+            )
+        ]
+        X = X.drop(columns=drop_xt, errors="ignore")
         X = X.drop(columns=["cliente_id"], errors="ignore")
         X = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
-        # Rápido: una sola reindex en lugar de insertar columna por columna
         return X.reindex(columns=self.features)
 
     def score(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -158,7 +174,7 @@ class MoraPredictor:
             if col in work.columns:
                 out[col] = work[col].values
 
-        out["prob_mora_futura"] = np.round(prob, 4)
+        out["prob_mora_futura"] = np.round(prob, 6)
         out["pred_mora_futura"] = (prob >= self.umbral_f1).astype(int)
         out["nivel_riesgo"] = np.select(
             [prob >= self.umbral_alto, prob >= self.umbral_f1, prob >= 0.2],

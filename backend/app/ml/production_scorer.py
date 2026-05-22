@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import numpy as np
 import pandas as pd
 
 from app.config import settings
@@ -23,6 +24,7 @@ _prod_error: str | None = None
 
 PRODUCTION_MODEL_FILE = "modelo_mora_futura.pkl"
 
+# Columnas prioritarias para señales en UI (se añaden todas las numéricas del Excel)
 SIGNAL_KEYS = (
     "variacion_saldo_30d",
     "variacion_saldo",
@@ -31,6 +33,7 @@ SIGNAL_KEYS = (
     "pct_var_movimientos",
     "num_movimientos_30d",
     "dias_desde_ultimo_pago_max",
+    "dias_desde_ultimo_pago_prom",
     "dias_atraso_promedio",
     "max_dias_mora_actual",
     "ratio_pago_cuota",
@@ -40,17 +43,71 @@ SIGNAL_KEYS = (
     "ingresos_socio",
     "egresos_socio",
     "xt_n_operaciones",
+    "hist_cuotas_atrasadas_max",
+    "hist_cuotas_atrasadas_total",
+    "saldo_promedio_cuenta",
+    "n_creditos_unicos",
 )
 
+SIGNAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "variacion_saldo_30d": ("var_saldo_30d", "pct_saldo_30d", "variacion_saldo"),
+    "variacion_movimientos_30d": (
+        "variacion_movimientos",
+        "pct_var_movimientos",
+        "var_movimientos_30d",
+    ),
+    "dias_desde_ultimo_pago_max": (
+        "dias_atraso_promedio",
+        "dias_atraso",
+        "dias_mora",
+        "max_dias_mora",
+    ),
+    "num_movimientos_30d": ("n_movimientos_30d", "movimientos_30d"),
+}
 
-def _nivel_from_prob(prob: float, umbral_f1: float, umbral_alto: float) -> str:
-    if prob >= umbral_alto:
+SKIP_SIGNAL_COLS = {
+    "cliente_id",
+    "fecha_corte",
+    "fecha_objetivo",
+    "target_mora_futura",
+    "target_mora",
+    "mora_actual",
+    "max_dias_mora_actual",
+    "dias_mora_futuro",
+    "saldo_vencido_futuro",
+}
+
+
+def _norm_cliente_id(value: Any) -> str:
+    s = str(value).strip()
+    if s.endswith(".0") and s[:-2].replace(".", "", 1).isdigit():
+        s = s[:-2]
+    return s
+
+
+def _nivel_from_label(label: str, prob: float, umbral_f1: float, umbral_alto: float) -> str:
+    low = (label or "").lower()
+    if "muy alto" in low or prob >= umbral_alto:
         return "alto"
-    if prob >= umbral_f1:
+    if low == "alto" or prob >= umbral_f1:
+        return "alto" if prob >= umbral_alto else "medio"
+    if "medio" in low or prob >= 0.08:
         return "medio"
-    if prob >= 0.2:
+    if prob >= 0.03:
         return "medio"
     return "bajo"
+
+
+def _canonicalize_features(feats: dict[str, float]) -> dict[str, float]:
+    out = dict(feats)
+    for canonical, aliases in SIGNAL_ALIASES.items():
+        if canonical in out:
+            continue
+        for alias in aliases:
+            if alias in out:
+                out[canonical] = out[alias]
+                break
+    return out
 
 
 def get_production_predictor():
@@ -99,32 +156,59 @@ def _ensure_cliente_id(df: pd.DataFrame) -> pd.DataFrame:
                 break
     if "cliente_id" not in out.columns:
         raise ValueError("Falta columna: cedula, cliente_id o nro_cliente.")
-    out["cliente_id"] = out["cliente_id"].astype(str).str.strip()
+    out["cliente_id"] = out["cliente_id"].map(_norm_cliente_id)
     return out
 
 
 def _extract_signal_features(raw: pd.DataFrame) -> dict[str, dict[str, float]]:
-    cols = [c for c in SIGNAL_KEYS if c in raw.columns]
-    name_col = next(
-        (c for c in ("nombre", "nombre_socio", "nombre_cliente") if c in raw.columns),
-        None,
-    )
-    use_cols = ["cliente_id"] + cols
-    if name_col:
-        use_cols.append(name_col)
-    sub = raw[use_cols].drop_duplicates("cliente_id").set_index("cliente_id")
+    """Toma todas las columnas numéricas útiles del Excel para las señales en UI."""
+    work = raw.copy()
+    work["cliente_id"] = work["cliente_id"].map(_norm_cliente_id)
+    numeric_cols = [
+        c
+        for c in work.select_dtypes(include=[np.number]).columns
+        if c not in SKIP_SIGNAL_COLS and not str(c).startswith("target")
+    ]
+    # Priorizar columnas conocidas + resto numéricas (máx. 40 por socio)
+    ordered = [c for c in SIGNAL_KEYS if c in numeric_cols]
+    ordered += [c for c in numeric_cols if c not in ordered][: max(0, 40 - len(ordered))]
+
+    sub = work[["cliente_id", *ordered]].drop_duplicates("cliente_id", keep="last")
     result: dict[str, dict[str, float]] = {}
-    for cid, row in sub.iterrows():
+    for row in sub.itertuples(index=False):
+        cid = _norm_cliente_id(row[0])
         feats: dict[str, float] = {}
-        for col in cols:
-            val = row[col]
+        for col, val in zip(ordered, row[1:], strict=False):
             if pd.notna(val):
                 try:
                     feats[col] = float(val)
                 except (TypeError, ValueError):
                     pass
-        result[str(cid)] = feats
+        if feats:
+            result[cid] = _canonicalize_features(feats)
+        else:
+            result[cid] = {}
     return result
+
+
+def _apply_cohort_risk_tiers(socios: list[dict[str, Any]]) -> None:
+    """Si el modelo devuelve probabilidades muy bajas, usa ranking del lote para niveles visibles."""
+    if len(socios) < 8:
+        return
+    probs = np.array([s["prediccion"]["probabilidad_mora"] for s in socios], dtype=float)
+    if probs.max() >= 0.12:
+        return
+    p85, p95 = np.percentile(probs, [85, 95])
+    if p95 <= 0:
+        return
+    for s in socios:
+        p = s["prediccion"]["probabilidad_mora"]
+        if p <= 0:
+            continue
+        if p >= p95:
+            s["prediccion"]["nivel_riesgo"] = "alto"
+        elif p >= p85:
+            s["prediccion"]["nivel_riesgo"] = "medio"
 
 
 def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -140,6 +224,8 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     n = len(scored)
     if n == 0:
         return []
+
+    scored["cliente_id"] = scored["cliente_id"].map(_norm_cliente_id)
 
     name_col = next(
         (c for c in ("nombre", "nombre_socio", "nombre_cliente", "socio") if c in scored.columns),
@@ -170,24 +256,28 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     umbral_f1, umbral_alto = prod.umbral_f1, prod.umbral_alto
     socios: list[dict[str, Any]] = []
     for i in range(n):
-        cid = cids[i]
+        cid = _norm_cliente_id(cids[i])
         prob = float(probs[i])
         nombre = nombres[i]
         if not nombre or nombre == "nan":
             nombre = f"Socio {cid}"
+        feats = feat_by_id.get(cid, {})
         socios.append(
             {
                 "id": str(uuid4()),
                 "cedula": cid,
                 "nombre": nombre,
-                "features": feat_by_id.get(cid, {}),
+                "features": feats,
                 "prediccion": {
-                    "probabilidad_mora": round(prob, 4),
-                    "nivel_riesgo": _nivel_from_prob(prob, umbral_f1, umbral_alto),
+                    "probabilidad_mora": round(prob, 6),
+                    "nivel_riesgo": _nivel_from_label(niveles_lbl[i], prob, umbral_f1, umbral_alto),
                     "nivel_label": niveles_lbl[i],
                     "accion": acciones[i],
                     "modelo": PRODUCTION_MODEL_FILE,
+                    "features_usadas": feats,
                 },
             }
         )
+
+    _apply_cohort_risk_tiers(socios)
     return socios

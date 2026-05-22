@@ -517,11 +517,15 @@ function App() {
                   const p = getPrediccion(s);
                   const prob = p?.probabilidad_mora ?? 0;
                   const nivel = p?.nivel_riesgo ?? "bajo";
-                  const feats = s.features || p?.features_usadas || {};
+                  const feats =
+                    s.features ||
+                    p?.features_usadas ||
+                    (p as { features?: Record<string, number> })?.features ||
+                    {};
                   const signalTags = detectRiskSignals(feats, prob);
-                  const showSignals =
+                  const hasRisk =
                     signalTags.length > 0 ||
-                    prob >= 0.2 ||
+                    prob >= 0.03 ||
                     nivel !== "bajo";
 
                   return (
@@ -549,7 +553,7 @@ function App() {
                         <span className={`risk-pill ${nivel}`}>{nivel}</span>
                       </td>
                       <td>
-                        {showSignals && signalTags.length > 0 ? (
+                        {signalTags.length > 0 ? (
                           <div className="signals-panel">
                             <div className="signal-tags">
                               {signalTags.map((tag) => (
@@ -559,6 +563,10 @@ function App() {
                               ))}
                             </div>
                           </div>
+                        ) : hasRisk ? (
+                          <span className="signal-tag signal-tag--model">
+                            Riesgo modelo {(prob * 100).toFixed(2)}%
+                          </span>
                         ) : (
                           <span className="signals-stable">Sin alertas</span>
                         )}
