@@ -56,3 +56,31 @@ Probar: `https://TU-API.onrender.com/api/health`
 | `SUPABASE_SERVICE_KEY` | Render (backend) |
 | `CORS_ORIGINS` | Render (backend) |
 | `VITE_API_URL` | Vercel (frontend) |
+
+
+## Error "Failed to fetch"
+
+El navegador no llega al backend. Revisa:
+
+### En local
+1. Terminal 1 — backend:
+   ```bash
+   cd backend
+   PYTHONPATH=. uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+2. Terminal 2 — frontend:
+   ```bash
+   cd frontend && npm run dev
+   ```
+3. Abre http://localhost:5173 (no abras solo el `dist` sin API).
+4. Prueba: http://localhost:8000/api/health debe responder `{"status":"ok",...}`
+
+### En Vercel + Render
+1. En **Vercel** → Settings → Environment Variables:
+   - `VITE_API_URL` = `https://TU-SERVICIO.onrender.com/api` (con `/api` al final)
+2. **Redeploy** el frontend después de guardar la variable.
+3. En **Render** → `CORS_ORIGINS` = tu URL de Vercel (ej. `https://cooptech-mora.vercel.app`)
+4. Si la API en Render está dormida (plan free), la primera petición puede tardar ~1 min.
+
+### HTTPS
+Si el front es `https://` y la API es `http://`, el navegador bloquea la petición. La API también debe ser HTTPS (Render lo da).
