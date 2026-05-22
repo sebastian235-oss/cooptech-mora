@@ -11,18 +11,23 @@ import pandas as pd
 from app.config import settings
 from app.ml import production_scorer
 from app.ml.predictor import predict_dataframe
+from app.ml.proxy_score import apply_batch_ranking_for_low_coverage
+from app.services.column_mapping import (
+    LEAKAGE_ONLY,
+    apply_tabla_maestra_aliases,
+    diagnose_columns,
+)
 
-ID_ALIASES = ["cliente_id", "nro_cliente", "cedula", "id_cliente", "socio_id", "id_socio"]
-LEAKAGE_COLS = {
-    "mora_actual",
-    "max_dias_mora_actual",
-    "dias_mora_futuro",
-    "saldo_vencido_futuro",
-    "target_mora_futura",
-    "target_mora",
-    "dias_mora",
-    "saldo_vencido",
-}
+ID_ALIASES = [
+    "cliente_id",
+    "nro_cliente",
+    "cedula",
+    "id_cliente",
+    "socio_id",
+    "id_socio",
+    "codigo_cliente",
+    "numero_cliente",
+]
 
 
 def _norm_col(name: str) -> str:
@@ -41,14 +46,12 @@ def _read_file(content: bytes, filename: str) -> pd.DataFrame:
     raise ValueError("Formato no soportado. Usa .xlsx, .xls o .csv")
 
 
-def _normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [_norm_col(c) for c in df.columns]
-    df = df.loc[:, ~df.columns.duplicated()]
-    drop = [c for c in df.columns if c in LEAKAGE_COLS]
+def _normalize_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    df, alias_msgs = apply_tabla_maestra_aliases(df)
+    drop = [c for c in df.columns if c in LEAKAGE_ONLY]
     if drop:
         df = df.drop(columns=drop, errors="ignore")
-    return df
+    return df, alias_msgs
 
 
 def _has_cliente_id(df: pd.DataFrame) -> bool:
@@ -63,6 +66,11 @@ def _apply_row_cap(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     return df.iloc[:cap].copy(), len(df) - cap
 
 
+def prod_features() -> list[str]:
+    prod = production_scorer.get_production_predictor()
+    return list(prod.features) if prod else []
+
+
 def import_excel(content: bytes, filename: str) -> dict[str, Any]:
     if not production_scorer.production_available():
         raise ValueError(
@@ -70,7 +78,8 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
             "Copia tu carpeta modelo_mora_produccion/ completa al proyecto."
         )
 
-    df = _normalize_dataframe(_read_file(content, filename))
+    raw = _read_file(content, filename)
+    df, alias_msgs = _normalize_dataframe(raw)
     if df.empty:
         raise ValueError("El archivo está vacío.")
     if not _has_cliente_id(df):
@@ -79,21 +88,39 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
     total_filas_archivo = len(df)
     df, truncated = _apply_row_cap(df)
 
-    socios = predict_dataframe(df)
+    socios = apply_batch_ranking_for_low_coverage(predict_dataframe(df))
     probs = [s["prediccion"]["probabilidad_mora"] for s in socios]
+    coverages = [s["prediccion"].get("feature_coverage", 0) for s in socios]
+    avg_cov = sum(coverages) / len(coverages) if coverages else 0
+    schema_hint = ""
+    diag = diagnose_columns(list(df.columns), prod_features())
+    if avg_cov < 0.35:
+        schema_hint = (
+            " Advertencia: cobertura media {:.0%} ({}/{} columnas del modelo). "
+            "Tabla maestra: conviene exportar el dataset de prevención completo o copiar "
+            "dataset_entrenamiento_prevencion.csv en modelo_mora_produccion/."
+        ).format(avg_cov, diag["coinciden_modelo_count"], diag["features_modelo_total"])
 
     msg_extra = ""
     if truncated:
         msg_extra = f" Se procesaron {len(socios)} de {total_filas_archivo} filas (límite {settings.max_upload_rows})."
 
+    modo_ranking = (
+        socios[0]["prediccion"].get("modo_ranking", "modelo_ml") if socios else "modelo_ml"
+    )
+
     return {
         "mode": "modelo_mora_produccion",
+        "modo_ranking": modo_ranking,
         "total": len(socios),
         "total_archivo": total_filas_archivo,
         "socios": socios,
         "columnas_detectadas": list(df.columns),
+        "columnas_mapeadas": alias_msgs,
+        "diagnostico_columnas": diag,
         "probabilidad_promedio": round(sum(probs) / len(probs), 4) if probs else 0,
         "modelo": "modelo_mora_futura.pkl",
         "truncado": truncated,
-        "mensaje_extra": msg_extra,
+        "mensaje_extra": msg_extra + schema_hint,
+        "cobertura_features_promedio": round(avg_cov, 4),
     }

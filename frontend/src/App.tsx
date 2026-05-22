@@ -15,9 +15,11 @@ import {
   clearUpload,
   createSocioManual,
   fetchDashboard,
+  exportCsvUrl,
   uploadExcel,
   type SocioManualPayload,
 } from "./api";
+import { formatProbPercent, probBarWidth } from "./format";
 import { detectRiskSignals } from "./signals";
 import type { DashboardResponse, NivelRiesgo, Socio } from "./types";
 import "./App.css";
@@ -74,6 +76,11 @@ function App() {
   const [manual, setManual] = useState<SocioManualPayload>({ ...EMPTY_MANUAL });
   const [savingManual, setSavingManual] = useState(false);
   const [search, setSearch] = useState("");
+  const [uploadMeta, setUploadMeta] = useState<{
+    cobertura?: number;
+    modoRanking?: string;
+    columnasMapeadas?: string[];
+  } | null>(null);
 
   const refresh = useCallback(() => {
     return fetchDashboard()
@@ -91,8 +98,21 @@ function App() {
     setError(null);
     try {
       const res = await uploadExcel(file);
+      setUploadMeta({
+        cobertura: res.cobertura_features,
+        modoRanking: res.modo_ranking,
+        columnasMapeadas: res.columnas_mapeadas,
+      });
+      const covTxt =
+        res.cobertura_features != null
+          ? ` · Cobertura ${(res.cobertura_features * 100).toFixed(0)}%`
+          : "";
+      const rankTxt =
+        res.modo_ranking === "tabla_maestra_relativo"
+          ? " · Ranking relativo (tabla maestra)"
+          : "";
       setUploadMsg(
-        `${res.mensaje} · Modelo: ${res.modo}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
+        `${res.mensaje} · Modelo: ${res.modo}${covTxt}${rankTxt}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
       );
       await refresh();
     } catch (e) {
@@ -107,6 +127,7 @@ function App() {
     try {
       const res = await clearUpload();
       setUploadMsg(res.mensaje);
+      setUploadMeta(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo cancelar");
@@ -192,13 +213,18 @@ function App() {
               {uploading ? "Procesando…" : "Subir Excel"}
             </label>
             {hasUpload && (
-              <button
-                type="button"
-                className="btn-cancel"
-                onClick={handleCancelUpload}
-              >
-                Cancelar carga
-              </button>
+              <>
+                <a className="btn-secondary" href={exportCsvUrl()} download>
+                  Exportar CSV
+                </a>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={handleCancelUpload}
+                >
+                  Cancelar carga
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -214,6 +240,18 @@ function App() {
       </header>
 
       {uploadMsg && <p className="upload-success">{uploadMsg}</p>}
+      {uploadMeta?.modoRanking === "tabla_maestra_relativo" && (
+        <p className="upload-hint coverage-hint">
+          Tu archivo tiene pocas columnas del modelo ({uploadMeta.cobertura != null ? `${(uploadMeta.cobertura * 100).toFixed(0)}%` : "baja"} cobertura).
+          Las probabilidades mostradas son un ranking relativo dentro del archivo para priorizar seguimiento.
+          Para scoring ML completo, exporta el dataset de prevención con ~162 columnas.
+        </p>
+      )}
+      {uploadMeta?.columnasMapeadas && uploadMeta.columnasMapeadas.length > 0 && (
+        <p className="upload-hint">
+          Columnas renombradas: {uploadMeta.columnasMapeadas.join(", ")}
+        </p>
+      )}
       {largeDataset && (
         <p className="upload-success">
           Analizados {socios.length.toLocaleString()} socios. La tabla puede tardar unos segundos.
@@ -404,7 +442,7 @@ function App() {
         <div className="card">
           <h3>Probabilidad promedio</h3>
           <div className="value">
-            {(stats.probabilidad_promedio * 100).toFixed(1)}%
+            {formatProbPercent(stats.probabilidad_promedio)}
           </div>
         </div>
         <div className="card">
@@ -516,13 +554,17 @@ function App() {
                 sociosFiltered.map((s) => {
                   const p = getPrediccion(s);
                   const prob = p?.probabilidad_mora ?? 0;
+                  const coverage = p?.feature_coverage ?? 1;
                   const nivel = p?.nivel_riesgo ?? "bajo";
-                  const feats = s.features || p?.features_usadas || {};
-                  const signalTags = detectRiskSignals(feats, prob);
-                  const showSignals =
-                    signalTags.length > 0 ||
-                    prob >= 0.2 ||
-                    nivel !== "bajo";
+                  const lowCoverage = coverage < 0.35;
+                  const feats =
+                    s.features ||
+                    p?.features_usadas ||
+                    (p as { features?: Record<string, number> })?.features ||
+                    {};
+                  const signalTags =
+                    (p?.senales?.length ? p.senales : null) ??
+                    detectRiskSignals(feats);
 
                   return (
                     <tr key={s.id}>
@@ -533,13 +575,16 @@ function App() {
                         )}
                       </td>
                       <td>
-                        <span className="prob-value">
-                          {(prob * 100).toFixed(1)}%
+                        <span className="prob-value" title={lowCoverage ? `Cobertura de datos: ${(coverage * 100).toFixed(0)}%` : undefined}>
+                          {formatProbPercent(prob)}
                         </span>
+                        {lowCoverage && (
+                          <span className="coverage-warn">Datos incompletos</span>
+                        )}
                         <div className="progress-bar">
                           <span
                             style={{
-                              width: `${Math.min(prob * 100, 100)}%`,
+                              width: `${probBarWidth(prob)}%`,
                               background: RISK_COLORS[nivel],
                             }}
                           />
@@ -549,7 +594,7 @@ function App() {
                         <span className={`risk-pill ${nivel}`}>{nivel}</span>
                       </td>
                       <td>
-                        {showSignals && signalTags.length > 0 ? (
+                        {signalTags.length > 0 ? (
                           <div className="signals-panel">
                             <div className="signal-tags">
                               {signalTags.map((tag) => (

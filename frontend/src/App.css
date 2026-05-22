@@ -652,7 +652,10 @@ tbody tr:not(:last-child) td {
 }
 
 .signals-panel {
-  min-width: 180px;
+  min-width: 200px;
+  padding: 0.35rem 0.4rem;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.06);
 }
 
 .signal-tags {
@@ -661,17 +664,19 @@ tbody tr:not(:last-child) td {
   gap: 0.4rem;
 }
 
+
 .signal-tag {
   display: inline-block;
-  padding: 0.3rem 0.55rem;
-  font-size: 0.72rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
   color: #fecaca;
-  background: linear-gradient(180deg, #991b1b 0%, #7f1d1d 100%);
-  border: 1px solid #b91c1c;
-  border-radius: 6px;
+  background: #7f1d1d;
+  border: 1px solid #991b1b;
+  border-radius: 8px;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .signals-stable {
@@ -681,6 +686,17 @@ tbody tr:not(:last-child) td {
 }
 
 thead th:last-child {
-  color: #7dd3fc;
-  letter-spacing: 0.06em;
+  color: #38bdf8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.coverage-warn {
+  display: block;
+  font-size: 0.68rem;
+  color: #b45309;
+  font-weight: 600;
+  margin-top: 0.2rem;
 }

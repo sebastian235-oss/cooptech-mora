@@ -3,9 +3,32 @@ import asyncio
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.config import settings
-from app.services.excel_import import import_excel
+from app.services.column_mapping import apply_tabla_maestra_aliases, diagnose_columns
+from app.services.excel_import import _read_file, import_excel, prod_features
 
 router = APIRouter(prefix="/socios", tags=["upload"])
+
+
+@router.post("/analyze-excel")
+async def analyze_excel(file: UploadFile = File(...)):
+    """Diagnóstico de columnas (tabla maestra) sin cargar el dashboard."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Archivo sin nombre.")
+    content = await file.read()
+    try:
+        raw = _read_file(content, file.filename)
+        df, alias_msgs = apply_tabla_maestra_aliases(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    diag = diagnose_columns(list(df.columns), prod_features())
+    return {
+        "archivo": file.filename,
+        "filas": len(df),
+        "columnas_originales": [str(c) for c in raw.columns],
+        "columnas_tras_mapeo": list(df.columns),
+        "renombres_aplicados": alias_msgs,
+        "diagnostico": diag,
+    }
 
 
 @router.post("/upload-excel")
@@ -25,7 +48,6 @@ async def upload_excel(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Archivo demasiado grande (máx. 20 MB).")
 
     try:
-        # Evita bloquear el event loop (causa de “cargando infinito” en el front)
         result = await asyncio.to_thread(import_excel, content, file.filename)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -40,10 +62,10 @@ async def upload_excel(file: UploadFile = File(...)):
 
     socios_router.set_uploaded_socios(socios)
 
-    # Supabase fila a fila bloqueaba la respuesta; desactivado por defecto
     if settings.sync_supabase_on_upload:
-        from app.services import supabase_client
         from datetime import datetime, timezone
+
+        from app.services import supabase_client
 
         if supabase_client.is_configured():
             for s in socios[:100]:
@@ -73,5 +95,9 @@ async def upload_excel(file: UploadFile = File(...)):
         "total_procesados": result["total"],
         "probabilidad_promedio": result.get("probabilidad_promedio"),
         "columnas_detectadas": result.get("columnas_detectadas", []),
+        "columnas_mapeadas": result.get("columnas_mapeadas", []),
+        "cobertura_features": result.get("cobertura_features_promedio"),
+        "diagnostico_columnas": result.get("diagnostico_columnas"),
+        "modo_ranking": result.get("modo_ranking"),
         "mensaje": f"Se analizaron {result['total']} socios con modelo_mora_futura.pkl.{extra}{trunc_txt}",
     }

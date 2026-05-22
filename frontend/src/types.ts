@@ -2,11 +2,16 @@ export type NivelRiesgo = "bajo" | "medio" | "alto";
 
 export interface Prediccion {
   probabilidad_mora: number;
+  probabilidad_mora_ml?: number;
+  modo_ranking?: string;
+  feature_coverage?: number;
   nivel_riesgo: NivelRiesgo;
   features_usadas?: Record<string, number>;
   accion?: string;
   nivel_label?: string;
   modelo?: string;
+  senales?: string[];
+  feature_coverage?: number;
 }
 
 export interface Socio {

@@ -1,7 +1,10 @@
+import csv
+import io
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.ml.predictor import predict_from_features
 from app.schemas import SocioCreate
@@ -115,7 +118,54 @@ async def dashboard():
 
 @router.delete("/upload")
 async def clear_upload():
-    """Cancela la carga de Excel y vuelve a datos demo."""
+    """Cancela la carga de Excel."""
     set_uploaded_socios([])
     _seed_demo()
-    return {"ok": True, "mensaje": "Carga cancelada. Se restauraron datos de demostración."}
+    return {"ok": True, "mensaje": "Carga cancelada. Sube un nuevo Excel o agrega clientes manualmente."}
+
+
+@router.get("/export-csv")
+async def export_csv():
+    """Exporta socios activos con predicción a CSV."""
+    socios_list = _active_socios()
+    if not socios_list:
+        raise HTTPException(status_code=404, detail="No hay socios para exportar.")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "cedula",
+            "nombre",
+            "probabilidad_mora",
+            "probabilidad_mora_ml",
+            "nivel_riesgo",
+            "modo_ranking",
+            "feature_coverage",
+            "senales",
+            "accion",
+        ]
+    )
+    for s in socios_list:
+        p = s.get("prediccion", {})
+        senales = p.get("senales") or []
+        writer.writerow(
+            [
+                s.get("cedula", ""),
+                s.get("nombre", ""),
+                p.get("probabilidad_mora", ""),
+                p.get("probabilidad_mora_ml", ""),
+                p.get("nivel_riesgo", ""),
+                p.get("modo_ranking", ""),
+                p.get("feature_coverage", ""),
+                "; ".join(senales) if isinstance(senales, list) else senales,
+                p.get("accion", ""),
+            ]
+        )
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="cooptech_riesgo_mora.csv"'},
+    )

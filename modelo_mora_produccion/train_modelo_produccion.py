@@ -174,11 +174,16 @@ def main():
     print(f"  Preventivos holdout (al día + prob>={umbral_alto}): {preventivo_h}")
 
     # Guardar bundle producción
+    prev_latest = train_df.sort_values("fecha_corte").drop_duplicates("cliente_id", keep="last")
+    feature_medians = X.median(numeric_only=True).to_dict()
+
     bundle = {
         "model": model,
         "encoders": encoders,
         "features": feature_names,
         "xt_agg": xt,
+        "prev_latest": prev_latest,
+        "feature_medians": feature_medians,
         "target": TARGET_COL,
         "umbral_f1": umbral_f1,
         "umbral_alto": umbral_alto,
