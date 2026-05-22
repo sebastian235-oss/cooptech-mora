@@ -139,6 +139,7 @@ function App() {
 
   const { stats, socios, source } = data;
   const hasUpload = source === "upload";
+  const largeDataset = socios.length > 5000;
 
   const pieData = Object.entries(stats.por_nivel).map(([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1),
@@ -146,7 +147,8 @@ function App() {
     nivel: name as NivelRiesgo,
   }));
 
-  const barData = socios.map((s) => {
+  const barSource = socios.length > 200 ? socios.slice(0, 200) : socios;
+  const barData = barSource.map((s) => {
     const p = getPrediccion(s);
     return {
       nombre: s.nombre.split(" ")[0],
@@ -200,6 +202,16 @@ function App() {
       </header>
 
       {uploadMsg && <p className="upload-success">{uploadMsg}</p>}
+      {largeDataset && (
+        <p className="upload-success">
+          Analizados {socios.length.toLocaleString()} socios. La tabla puede tardar unos segundos.
+        </p>
+      )}
+      {socios.length === 0 && (
+        <p className="upload-hint" style={{ marginBottom: "1rem", textAlign: "center" }}>
+          Sube un Excel (formato entrenamiento) o agrega un cliente manual.
+        </p>
+      )}
       {error && data && <p className="upload-error">{error}</p>}
 
       {showManual && (
