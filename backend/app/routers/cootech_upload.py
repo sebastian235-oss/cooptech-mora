@@ -29,8 +29,17 @@ async def upload_cootech(files: list[UploadFile] = File(...)):
     if not bundle:
         raise HTTPException(status_code=400, detail="Ningún archivo válido.")
 
-    if total_bytes > 80 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Paquete demasiado grande (máx. 80 MB).")
+    max_bytes = settings.cootech_max_upload_mb * 1024 * 1024
+    if total_bytes > max_bytes:
+        mb = round(total_bytes / (1024 * 1024), 1)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Paquete demasiado grande ({mb} MB). "
+                f"Máximo permitido: {settings.cootech_max_upload_mb} MB. "
+                "Si aún falla, sube primero los 3 DataSabanaCred y luego el resto en dos tandas."
+            ),
+        )
 
     try:
         result = await asyncio.to_thread(import_cootech_bundle, bundle)

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # 0 = sin límite (procesa todo el archivo). Ej: 25000 para tope opcional.
     max_upload_rows: int = 0
     sync_supabase_on_upload: bool = False
+    # Paquete CoopTech (12 archivos). Variable de entorno: COOTECH_MAX_UPLOAD_MB
+    cootech_max_upload_mb: int = 512
 
 
 settings = Settings()

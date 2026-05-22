@@ -28,7 +28,9 @@ cd backend && PYTHONPATH=. uvicorn app.main:app --reload --port 8000
 ## API
 
 - `POST /api/socios/upload-cootech` — multipart, campo `files` (repetido por archivo).
-- Respuesta incluye `stats_cootech.tiempo_ms` (objetivo &lt; 5 s con ~100k filas de transacciones).
+- Respuesta incluye `stats_cootech.tiempo_ms` (objetivo < 5 s con ~100k filas de transacciones.
+
+Límite de subida por defecto: **512 MB** (`COOTECH_MAX_UPLOAD_MB` en el backend).
 
 ## Datos reales
 
