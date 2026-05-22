@@ -589,3 +589,98 @@ tbody tr:not(:last-child) td {
   border: none;
   cursor: pointer;
 }
+
+.empty-hint {
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.35rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.table-toolbar h2 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.search-box input[type="search"] {
+  flex: 1;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.search-box input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search-count {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.no-results {
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem !important;
+}
+
+.signals-panel {
+  min-width: 180px;
+}
+
+.signal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.signal-tag {
+  display: inline-block;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #fecaca;
+  background: linear-gradient(180deg, #991b1b 0%, #7f1d1d 100%);
+  border: 1px solid #b91c1c;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.signals-stable {
+  font-size: 0.8rem;
+  color: var(--bajo);
+  font-weight: 500;
+}
+
+thead th:last-child {
+  color: #7dd3fc;
+  letter-spacing: 0.06em;
+}

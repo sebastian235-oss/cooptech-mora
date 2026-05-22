@@ -23,6 +23,25 @@ _prod_error: str | None = None
 
 PRODUCTION_MODEL_FILE = "modelo_mora_futura.pkl"
 
+SIGNAL_KEYS = (
+    "variacion_saldo_30d",
+    "variacion_saldo",
+    "variacion_movimientos_30d",
+    "variacion_movimientos",
+    "pct_var_movimientos",
+    "num_movimientos_30d",
+    "dias_desde_ultimo_pago_max",
+    "dias_atraso_promedio",
+    "max_dias_mora_actual",
+    "ratio_pago_cuota",
+    "ratio_egresos_ingresos",
+    "saldo_vencido_actual_total",
+    "capacidad_pago",
+    "ingresos_socio",
+    "egresos_socio",
+    "xt_n_operaciones",
+)
+
 
 def _nivel_from_prob(prob: float, umbral_f1: float, umbral_alto: float) -> str:
     if prob >= umbral_alto:
@@ -84,6 +103,30 @@ def _ensure_cliente_id(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _extract_signal_features(raw: pd.DataFrame) -> dict[str, dict[str, float]]:
+    cols = [c for c in SIGNAL_KEYS if c in raw.columns]
+    name_col = next(
+        (c for c in ("nombre", "nombre_socio", "nombre_cliente") if c in raw.columns),
+        None,
+    )
+    use_cols = ["cliente_id"] + cols
+    if name_col:
+        use_cols.append(name_col)
+    sub = raw[use_cols].drop_duplicates("cliente_id").set_index("cliente_id")
+    result: dict[str, dict[str, float]] = {}
+    for cid, row in sub.iterrows():
+        feats: dict[str, float] = {}
+        for col in cols:
+            val = row[col]
+            if pd.notna(val):
+                try:
+                    feats[col] = float(val)
+                except (TypeError, ValueError):
+                    pass
+        result[str(cid)] = feats
+    return result
+
+
 def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     prod = get_production_predictor()
     if prod is None:
@@ -91,6 +134,7 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
 
     raw = _ensure_cliente_id(df)
     raw = raw.drop_duplicates(subset=["cliente_id"], keep="last").reset_index(drop=True)
+    feat_by_id = _extract_signal_features(raw)
 
     scored = prod.score(raw)
     n = len(scored)
@@ -106,20 +150,9 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
             (c for c in ("nombre", "nombre_socio", "nombre_cliente", "socio") if c in raw.columns),
             None,
         )
-    agency_col = next(
-        (c for c in ("agencia", "sucursal", "oficina") if c in scored.columns or c in raw.columns),
-        None,
-    )
-
     if name_col and name_col not in scored.columns and name_col in raw.columns:
         scored = scored.merge(
             raw[["cliente_id", name_col]].drop_duplicates("cliente_id"),
-            on="cliente_id",
-            how="left",
-        )
-    if agency_col and agency_col not in scored.columns and agency_col in raw.columns:
-        scored = scored.merge(
-            raw[["cliente_id", agency_col]].drop_duplicates("cliente_id"),
             on="cliente_id",
             how="left",
         )
@@ -133,24 +166,21 @@ def score_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
         if name_col and name_col in scored.columns
         else [f"Socio {c}" for c in cids]
     )
-    agencias = (
-        scored[agency_col].astype(str).values
-        if agency_col and agency_col in scored.columns
-        else [None] * n
-    )
 
     umbral_f1, umbral_alto = prod.umbral_f1, prod.umbral_alto
     socios: list[dict[str, Any]] = []
     for i in range(n):
+        cid = cids[i]
         prob = float(probs[i])
-        ag = agencias[i]
+        nombre = nombres[i]
+        if not nombre or nombre == "nan":
+            nombre = f"Socio {cid}"
         socios.append(
             {
                 "id": str(uuid4()),
-                "cedula": cids[i],
-                "nombre": nombres[i] if nombres[i] and nombres[i] != "nan" else f"Socio {cids[i]}",
-                "agencia": ag if ag and ag != "nan" else None,
-                "features": {},
+                "cedula": cid,
+                "nombre": nombre,
+                "features": feat_by_id.get(cid, {}),
                 "prediccion": {
                     "probabilidad_mora": round(prob, 4),
                     "nivel_riesgo": _nivel_from_prob(prob, umbral_f1, umbral_alto),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -18,6 +18,7 @@ import {
   uploadExcel,
   type SocioManualPayload,
 } from "./api";
+import { detectRiskSignals } from "./signals";
 import type { DashboardResponse, NivelRiesgo, Socio } from "./types";
 import "./App.css";
 
@@ -40,7 +41,6 @@ const CHART_TOOLTIP = {
 const EMPTY_MANUAL: SocioManualPayload = {
   cedula: "",
   nombre: "",
-  agencia: "",
   ingresos_socio: undefined,
   egresos_socio: undefined,
   mora_actual: 0,
@@ -61,7 +61,7 @@ function getPrediccion(socio: Socio) {
 function sourceLabel(source: string) {
   if (source === "supabase") return "Supabase conectado";
   if (source === "upload") return "Datos cargados";
-  return "Modo demo";
+  return "Sin datos";
 }
 
 function App() {
@@ -73,6 +73,7 @@ function App() {
   const [showManual, setShowManual] = useState(false);
   const [manual, setManual] = useState<SocioManualPayload>({ ...EMPTY_MANUAL });
   const [savingManual, setSavingManual] = useState(false);
+  const [search, setSearch] = useState("");
 
   const refresh = useCallback(() => {
     return fetchDashboard()
@@ -132,6 +133,17 @@ function App() {
       setSavingManual(false);
     }
   };
+
+  const sociosFiltered = useMemo(() => {
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return data.socios;
+    return data.socios.filter((s) => {
+      const nombre = (s.nombre || "").toLowerCase();
+      const cedula = (s.cedula || "").toLowerCase();
+      return nombre.includes(q) || cedula.includes(q);
+    });
+  }, [data, search]);
 
   if (loading) return <div className="app loading">Cargando dashboard…</div>;
   if (error && !data) return <div className="app error">Error: {error}</div>;
@@ -208,7 +220,7 @@ function App() {
         </p>
       )}
       {socios.length === 0 && (
-        <p className="upload-hint" style={{ marginBottom: "1rem", textAlign: "center" }}>
+        <p className="upload-hint empty-hint">
           Sube un Excel (formato entrenamiento) o agrega un cliente manual.
         </p>
       )}
@@ -223,8 +235,7 @@ function App() {
           >
             <h2>Agregar cliente manualmente</h2>
             <p className="modal-hint">
-              Usa los mismos datos del Excel de entrenamiento para mejores
-              predicciones del modelo.
+              Usa los mismos datos del Excel de entrenamiento para mejores predicciones.
             </p>
             <div className="form-grid">
               <label>
@@ -244,15 +255,6 @@ function App() {
                   value={manual.nombre}
                   onChange={(e) =>
                     setManual({ ...manual, nombre: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Agencia
-                <input
-                  value={manual.agencia || ""}
-                  onChange={(e) =>
-                    setManual({ ...manual, agencia: e.target.value })
                   }
                 />
               </label>
@@ -476,71 +478,95 @@ function App() {
       </section>
 
       <section className="table-wrap">
-        <h2>Socios y señales de riesgo</h2>
+        <div className="table-toolbar">
+          <h2>Socios y señales de riesgo</h2>
+          <div className="search-box">
+            <input
+              type="search"
+              placeholder="Buscar por nombre o cédula…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Buscar socio"
+            />
+            {search && (
+              <span className="search-count">
+                {sociosFiltered.length} de {socios.length}
+              </span>
+            )}
+          </div>
+        </div>
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
                 <th>Socio</th>
-                <th>Agencia</th>
                 <th>Prob. mora</th>
                 <th>Nivel</th>
-                <th>Señales</th>
+                <th>Señales detectadas</th>
               </tr>
             </thead>
             <tbody>
-              {socios.map((s) => {
-                const p = getPrediccion(s);
-                const prob = p?.probabilidad_mora ?? 0;
-                const nivel = p?.nivel_riesgo ?? "bajo";
-                const feats = s.features || p?.features_usadas || {};
-                const signals = [
-                  (feats.dias_atraso_promedio ?? feats.dias_desde_ultimo_pago_max) >
-                    5 && "Atrasos",
-                  feats.variacion_saldo_30d < -0.2 && "Saldo ↓",
-                  feats.ratio_pago_cuota < 0.7 && "Pagos bajos",
-                  feats.ratio_egresos_ingresos > 0.85 && "Egresos altos",
-                  feats.num_movimientos_30d < 4 && "Poca actividad",
-                  p?.accion && String(p.accion),
-                ].filter(Boolean);
+              {sociosFiltered.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="no-results">
+                    No hay socios que coincidan con la búsqueda.
+                  </td>
+                </tr>
+              ) : (
+                sociosFiltered.map((s) => {
+                  const p = getPrediccion(s);
+                  const prob = p?.probabilidad_mora ?? 0;
+                  const nivel = p?.nivel_riesgo ?? "bajo";
+                  const feats = s.features || p?.features_usadas || {};
+                  const signalTags = detectRiskSignals(feats, prob);
+                  const showSignals =
+                    signalTags.length > 0 ||
+                    prob >= 0.2 ||
+                    nivel !== "bajo";
 
-                return (
-                  <tr key={s.id}>
-                    <td>
-                      <span className="socio-name">{s.nombre}</span>
-                      {s.cedula && (
-                        <span className="socio-cedula">{s.cedula}</span>
-                      )}
-                    </td>
-                    <td>{s.agencia || "—"}</td>
-                    <td>
-                      <span className="prob-value">
-                        {(prob * 100).toFixed(1)}%
-                      </span>
-                      <div className="progress-bar">
-                        <span
-                          style={{
-                            width: `${Math.min(prob * 100, 100)}%`,
-                            background: RISK_COLORS[nivel],
-                          }}
-                        />
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`risk-pill ${nivel}`}>{nivel}</span>
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          signals.length ? "signals" : "signals signals-stable"
-                        }
-                      >
-                        {signals.length ? signals.join(" · ") : "Estable"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+                  return (
+                    <tr key={s.id}>
+                      <td>
+                        <span className="socio-name">{s.nombre}</span>
+                        {s.cedula && (
+                          <span className="socio-cedula">{s.cedula}</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="prob-value">
+                          {(prob * 100).toFixed(1)}%
+                        </span>
+                        <div className="progress-bar">
+                          <span
+                            style={{
+                              width: `${Math.min(prob * 100, 100)}%`,
+                              background: RISK_COLORS[nivel],
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`risk-pill ${nivel}`}>{nivel}</span>
+                      </td>
+                      <td>
+                        {showSignals && signalTags.length > 0 ? (
+                          <div className="signals-panel">
+                            <div className="signal-tags">
+                              {signalTags.map((tag) => (
+                                <span key={tag} className="signal-tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="signals-stable">Sin alertas</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
