@@ -44,6 +44,18 @@ export interface UploadExcelResponse {
   mensaje: string;
   modelo?: string;
   probabilidad_promedio?: number;
+  cobertura_features?: number;
+  columnas_mapeadas?: string[];
+  modo_ranking?: string;
+  diagnostico_columnas?: {
+    coinciden_modelo_count?: number;
+    features_modelo_total?: number;
+    cobertura_esperada_pct?: number;
+  };
+}
+
+export function exportCsvUrl(): string {
+  return `${API_URL}/socios/export-csv`;
 }
 
 export async function uploadExcel(file: File): Promise<UploadExcelResponse> {

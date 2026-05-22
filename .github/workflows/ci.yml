@@ -25,6 +25,22 @@ jobs:
           assert production_scorer.production_available(), production_scorer.production_error()
           print('OK modelo_mora_futura.pkl')
           "
+      - name: Verify routers import
+        run: PYTHONPATH=backend python3 -c "from app.routers import upload; assert upload.router"
+      - name: Test tabla maestra import
+        run: |
+          cd backend
+          PYTHONPATH=. python3 -c "
+          from pathlib import Path
+          from app.services.excel_import import import_excel
+          p = Path('../samples/tabla_maestra_mora_test.xlsx')
+          r = import_excel(p.read_bytes(), p.name)
+          assert r['total'] == 50
+          assert r['modo_ranking'] == 'tabla_maestra_relativo'
+          probs = [s['prediccion']['probabilidad_mora'] for s in r['socios']]
+          assert max(probs) > 0.1, probs[:5]
+          print('OK tabla maestra', r['modo_ranking'], round(max(probs), 3))
+          "
       - name: Smoke test API
         run: |
           cd backend

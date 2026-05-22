@@ -12,6 +12,8 @@ Excel / Supabase (socios, predicciones)
    React Dashboard (frontend)
 ```
 
+Guía detallada en español (tabla maestra, rutas Windows): **[docs/GUIA_COOPTECH_DEVIATHON.md](docs/GUIA_COOPTECH_DEVIATHON.md)**
+
 ## Inicio rápido (local)
 
 ### 1. Modelo

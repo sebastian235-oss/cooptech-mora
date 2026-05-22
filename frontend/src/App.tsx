@@ -15,6 +15,7 @@ import {
   clearUpload,
   createSocioManual,
   fetchDashboard,
+  exportCsvUrl,
   uploadExcel,
   type SocioManualPayload,
 } from "./api";
@@ -75,6 +76,11 @@ function App() {
   const [manual, setManual] = useState<SocioManualPayload>({ ...EMPTY_MANUAL });
   const [savingManual, setSavingManual] = useState(false);
   const [search, setSearch] = useState("");
+  const [uploadMeta, setUploadMeta] = useState<{
+    cobertura?: number;
+    modoRanking?: string;
+    columnasMapeadas?: string[];
+  } | null>(null);
 
   const refresh = useCallback(() => {
     return fetchDashboard()
@@ -92,8 +98,21 @@ function App() {
     setError(null);
     try {
       const res = await uploadExcel(file);
+      setUploadMeta({
+        cobertura: res.cobertura_features,
+        modoRanking: res.modo_ranking,
+        columnasMapeadas: res.columnas_mapeadas,
+      });
+      const covTxt =
+        res.cobertura_features != null
+          ? ` · Cobertura ${(res.cobertura_features * 100).toFixed(0)}%`
+          : "";
+      const rankTxt =
+        res.modo_ranking === "tabla_maestra_relativo"
+          ? " · Ranking relativo (tabla maestra)"
+          : "";
       setUploadMsg(
-        `${res.mensaje} · Modelo: ${res.modo}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
+        `${res.mensaje} · Modelo: ${res.modo}${covTxt}${rankTxt}${res.probabilidad_promedio != null ? ` · Prom. ${(res.probabilidad_promedio * 100).toFixed(1)}%` : ""}`
       );
       await refresh();
     } catch (e) {
@@ -108,6 +127,7 @@ function App() {
     try {
       const res = await clearUpload();
       setUploadMsg(res.mensaje);
+      setUploadMeta(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo cancelar");
@@ -193,13 +213,18 @@ function App() {
               {uploading ? "Procesando…" : "Subir Excel"}
             </label>
             {hasUpload && (
-              <button
-                type="button"
-                className="btn-cancel"
-                onClick={handleCancelUpload}
-              >
-                Cancelar carga
-              </button>
+              <>
+                <a className="btn-secondary" href={exportCsvUrl()} download>
+                  Exportar CSV
+                </a>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={handleCancelUpload}
+                >
+                  Cancelar carga
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -215,6 +240,18 @@ function App() {
       </header>
 
       {uploadMsg && <p className="upload-success">{uploadMsg}</p>}
+      {uploadMeta?.modoRanking === "tabla_maestra_relativo" && (
+        <p className="upload-hint coverage-hint">
+          Tu archivo tiene pocas columnas del modelo ({uploadMeta.cobertura != null ? `${(uploadMeta.cobertura * 100).toFixed(0)}%` : "baja"} cobertura).
+          Las probabilidades mostradas son un ranking relativo dentro del archivo para priorizar seguimiento.
+          Para scoring ML completo, exporta el dataset de prevención con ~162 columnas.
+        </p>
+      )}
+      {uploadMeta?.columnasMapeadas && uploadMeta.columnasMapeadas.length > 0 && (
+        <p className="upload-hint">
+          Columnas renombradas: {uploadMeta.columnasMapeadas.join(", ")}
+        </p>
+      )}
       {largeDataset && (
         <p className="upload-success">
           Analizados {socios.length.toLocaleString()} socios. La tabla puede tardar unos segundos.

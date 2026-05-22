@@ -11,6 +11,7 @@ import pandas as pd
 from app.config import settings
 from app.ml import production_scorer
 from app.ml.predictor import predict_dataframe
+from app.ml.proxy_score import apply_batch_ranking_for_low_coverage
 from app.services.column_mapping import (
     LEAKAGE_ONLY,
     apply_tabla_maestra_aliases,
@@ -87,7 +88,7 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
     total_filas_archivo = len(df)
     df, truncated = _apply_row_cap(df)
 
-    socios = predict_dataframe(df)
+    socios = apply_batch_ranking_for_low_coverage(predict_dataframe(df))
     probs = [s["prediccion"]["probabilidad_mora"] for s in socios]
     coverages = [s["prediccion"].get("feature_coverage", 0) for s in socios]
     avg_cov = sum(coverages) / len(coverages) if coverages else 0
@@ -104,8 +105,13 @@ def import_excel(content: bytes, filename: str) -> dict[str, Any]:
     if truncated:
         msg_extra = f" Se procesaron {len(socios)} de {total_filas_archivo} filas (límite {settings.max_upload_rows})."
 
+    modo_ranking = (
+        socios[0]["prediccion"].get("modo_ranking", "modelo_ml") if socios else "modelo_ml"
+    )
+
     return {
         "mode": "modelo_mora_produccion",
+        "modo_ranking": modo_ranking,
         "total": len(socios),
         "total_archivo": total_filas_archivo,
         "socios": socios,

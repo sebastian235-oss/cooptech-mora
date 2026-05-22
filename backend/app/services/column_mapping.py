@@ -64,6 +64,9 @@ TABLA_MAESTRA_ALIASES: dict[str, str] = {
     "var_saldo": "variacion_saldo_30d",
     "ratio_pago": "ratio_pago_cuota",
     "ratio_egreso_ingreso": "ratio_egresos_ingresos",
+    "num_movimientos_30d": "num_movimientos_30d",
+    "n_movimientos_30d": "num_movimientos_30d",
+    "movimientos_30d": "num_movimientos_30d",
 }
 
 # Solo columnas que nunca deben entrar al modelo (target / fuga)
